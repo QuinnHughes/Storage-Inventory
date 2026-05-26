@@ -24,7 +24,14 @@ export const api = {
   saveSettings: (database_url) => request("PUT", "/settings", { database_url }),
 
   // Mapping — floors
-  getFloors: () => request("GET", "/mapping/floors"),
+  getFloors: (facility) => request("GET", facility ? `/mapping/floors?facility=${facility}` : "/mapping/floors"),
+  createFloor: (data) => request("POST", "/mapping/floors", data),
+  deleteFloor: (id) => request("DELETE", `/mapping/floors/${id}`),
+
+  // Mapping — locations
+  getLocations: (facility = "morgan") => request("GET", `/mapping/locations?facility=${facility}`),
+  createLocation: (data) => request("POST", "/mapping/locations", data),
+  deleteLocation: (id) => request("DELETE", `/mapping/locations/${id}`),
 
   // Mapping — ranges
   getRanges: (floorId) => request("GET", `/mapping/floors/${floorId}/ranges`),
@@ -103,4 +110,41 @@ export const api = {
   getRecord:    (id)       => request("GET",    `/analytics/records/${id}`),
   updateRecord: (id, data) => request("PUT",    `/analytics/records/${id}`, data),
   deleteRecord: (id)       => request("DELETE", `/analytics/records/${id}`),
+
+  // Scanning – sessions
+  listSessions:   (page = 1, perPage = 20) =>
+    request("GET", `/scanning/sessions?page=${page}&per_page=${perPage}`),
+  getSession:     (id)       => request("GET",    `/scanning/sessions/${id}`),
+  createSession:  (data)     => request("POST",   "/scanning/sessions", data),
+  patchSession:   (id, data) => request("PATCH",  `/scanning/sessions/${id}`, data),
+  deleteSession:  (id)       => request("DELETE", `/scanning/sessions/${id}`),
+
+  // Scanning – items (live scan)
+  addScanItem:    (sessionId, barcode) =>
+    request("POST", `/scanning/sessions/${sessionId}/items`, { barcode }),
+  removeScanItem: (sessionId, position) =>
+    request("DELETE", `/scanning/sessions/${sessionId}/items/${position}`),
+
+  // Scanning – batch upload
+  uploadBarcodes: (sessionId, file) => {
+    return new Promise((resolve, reject) => {
+      const form = new FormData();
+      form.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/scanning/sessions/${sessionId}/upload`);
+      xhr.onload = () => {
+        let body;
+        try { body = JSON.parse(xhr.responseText); } catch { body = {}; }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+        else reject(new Error(body.detail ?? xhr.statusText));
+      };
+      xhr.onerror = () => reject(new Error("Network error"));
+      xhr.send(form);
+    });
+  },
+
+  // Scanning – analysis
+  analyzeSession: (sessionId, locationCode) =>
+    request("POST", `/scanning/sessions/${sessionId}/analyze`,
+            { location_code: locationCode ?? null }),
 };

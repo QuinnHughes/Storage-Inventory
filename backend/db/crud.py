@@ -7,8 +7,11 @@ from db import models
 
 # ── Floors ────────────────────────────────────────────────────────────────────
 
-def list_floors(db: Session) -> list[models.Floor]:
-    return db.query(models.Floor).order_by(models.Floor.id).all()
+def list_floors(db: Session, facility: Optional[str] = None) -> list[models.Floor]:
+    q = db.query(models.Floor)
+    if facility:
+        q = q.filter(models.Floor.facility == facility)
+    return q.order_by(models.Floor.id).all()
 
 
 def get_floor(db: Session, floor_id: int) -> Optional[models.Floor]:
@@ -17,6 +20,23 @@ def get_floor(db: Session, floor_id: int) -> Optional[models.Floor]:
 
 def get_floor_by_code(db: Session, code: str) -> Optional[models.Floor]:
     return db.query(models.Floor).filter(models.Floor.code == code).first()
+
+
+def create_floor(db: Session, code: str, display_name: str, facility: str) -> models.Floor:
+    obj = models.Floor(code=code, display_name=display_name, facility=facility)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+def delete_floor(db: Session, floor_id: int) -> bool:
+    obj = get_floor(db, floor_id)
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
 
 
 # ── Ranges ────────────────────────────────────────────────────────────────────
@@ -50,12 +70,14 @@ def create_range(
     range_number: str,
     material_type: Optional[str],
     notes: Optional[str],
+    location_codes: Optional[list[str]] = None,
 ) -> models.Range:
     obj = models.Range(
         floor_id=floor_id,
         range_number=range_number,
         material_type=material_type,
         notes=notes,
+        location_codes=",".join(location_codes) if location_codes else None,
     )
     db.add(obj)
     db.commit()
@@ -68,12 +90,15 @@ def update_range(
     range_id: int,
     material_type: Optional[str],
     notes: Optional[str],
+    location_codes: Optional[list[str]] = None,
 ) -> Optional[models.Range]:
     obj = get_range(db, range_id)
     if not obj:
         return None
     obj.material_type = material_type
     obj.notes = notes
+    if location_codes is not None:
+        obj.location_codes = ",".join(location_codes) if location_codes else None
     db.commit()
     db.refresh(obj)
     return obj
@@ -312,4 +337,33 @@ def search_by_prefix(db: Session, floor_code: Optional[str], range_number: Optio
         return result
     result["ladder"] = ladder
     return result
+
+
+# ── Locations ─────────────────────────────────────────────────────────────────
+
+def list_locations(db: Session, collection_name: Optional[str] = None) -> list[models.Location]:
+    q = db.query(models.Location)
+    if collection_name:
+        q = q.join(models.Collection).filter(models.Collection.name == collection_name)
+    return q.order_by(models.Location.code).all()
+
+
+def create_location(db: Session, collection_name: str, code: str, display_name: str) -> models.Location:
+    col = db.query(models.Collection).filter(models.Collection.name == collection_name).first()
+    if not col:
+        raise ValueError(f"Collection '{collection_name}' not found")
+    obj = models.Location(collection_id=col.id, code=code, display_name=display_name)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+def delete_location(db: Session, location_id: int) -> bool:
+    obj = db.query(models.Location).filter(models.Location.id == location_id).first()
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
 

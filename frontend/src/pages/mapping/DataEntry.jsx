@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 
+const FACILITY_KEY = "mappingFacility";
+
 const MATERIAL_TYPES = [
   "general stacks",
   "microfilm",
@@ -12,8 +14,10 @@ const MATERIAL_TYPES = [
   "documents",
 ];
 
-// First floor ranges 11-53 have A/B/C/D; all others (and other floors) have A/B only.
-function defaultSides(floorCode, rangeNumber) {
+// Storage: ranges 11-53 on floor "1" have A/B/C/D; everything else is A/B.
+// Morgan: always A/B.
+function defaultSides(facility, floorCode, rangeNumber) {
+  if (facility === "morgan") return ["A", "B"];
   const num = parseInt(rangeNumber, 10);
   if (floorCode === "1" && num >= 11 && num <= 53) return ["A", "B", "C", "D"];
   return ["A", "B"];
@@ -23,7 +27,6 @@ function zeroPad(n, len = 2) {
   return String(n).padStart(len, "0");
 }
 
-// Build an empty shelf list for a ladder given a count
 function emptyShelvesForLadder(count) {
   return Array.from({ length: count }, (_, i) => ({
     shelf_number: zeroPad(i + 1),
@@ -36,31 +39,39 @@ const STEP = { FLOOR: 1, RANGE: 2, SIDES: 3, LADDERS: 4, SHELVES: 5, REVIEW: 6 }
 export default function DataEntry() {
   const navigate = useNavigate();
 
-  const [floors, setFloors] = useState([]);
-  const [step, setStep] = useState(STEP.FLOOR);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [facility, setFacility]           = useState("storage");
+  const [floors, setFloors]               = useState([]);
+  const [morganLocations, setMorganLocations] = useState([]);
+  const [step, setStep]                   = useState(STEP.FLOOR);
+  const [error, setError]                 = useState("");
+  const [saving, setSaving]               = useState(false);
+
+  // Floor creation (Morgan)
+  const [showFloorForm, setShowFloorForm] = useState(false);
+  const [newFloorCode, setNewFloorCode]   = useState("");
+  const [newFloorName, setNewFloorName]   = useState("");
+  const [creatingFloor, setCreatingFloor] = useState(false);
 
   // Form state
-  const [floorId, setFloorId] = useState("");
-  const [floorCode, setFloorCode] = useState("");
-  const [rangeNumber, setRangeNumber] = useState("");
-  const [materialType, setMaterialType] = useState("general stacks");
-  const [notes, setNotes] = useState("");
-  const [activeSides, setActiveSides] = useState(["A", "B"]);
-
-  // ladderCounts: { A: "5", B: "5", ... }
-  const [ladderCounts, setLadderCounts] = useState({});
-
-  // shelveData: { "A-1": [{shelf_number, width_inches}, ...], "A-2": [...], ... }
-  const [shelvesData, setShelvesData] = useState({});
-  // shelfCounts per ladder key: { "A-1": "10", ... }
-  const [shelfCounts, setShelfCounts] = useState({});
-  // batch-fill value per ladder key
-  const [batchFill, setBatchFill] = useState({});
+  const [floorId, setFloorId]             = useState("");
+  const [floorCode, setFloorCode]         = useState("");
+  const [rangeNumber, setRangeNumber]     = useState("");
+  const [materialType, setMaterialType]   = useState("general stacks");
+  const [notes, setNotes]                 = useState("");
+  const [selectedLocationCodes, setSelectedLocationCodes] = useState([]);
+  const [activeSides, setActiveSides]     = useState(["A", "B"]);
+  const [ladderCounts, setLadderCounts]   = useState({});
+  const [shelvesData, setShelvesData]     = useState({});
+  const [shelfCounts, setShelfCounts]     = useState({});
+  const [batchFill, setBatchFill]         = useState({});
 
   useEffect(() => {
-    api.getFloors().then(setFloors).catch(() => setError("Could not load floors."));
+    const fac = localStorage.getItem(FACILITY_KEY) || "storage";
+    setFacility(fac);
+    api.getFloors(fac).then(setFloors).catch(() => setError("Could not load floors."));
+    if (fac === "morgan") {
+      api.getLocations("morgan").then(setMorganLocations).catch(() => {});
+    }
   }, []);
 
   // ── Step handlers ──────────────────────────────────────────────────────────
@@ -69,8 +80,40 @@ export default function DataEntry() {
     setFloorId(floor.id);
     setFloorCode(floor.code);
     setRangeNumber("");
+    setSelectedLocationCodes([]);
     setError("");
     setStep(STEP.RANGE);
+  };
+
+  const createFloor = async () => {
+    if (!newFloorCode.trim() || !newFloorName.trim()) {
+      setError("Both floor code and display name are required.");
+      return;
+    }
+    setCreatingFloor(true);
+    setError("");
+    try {
+      await api.createFloor({
+        code: newFloorCode.trim(),
+        display_name: newFloorName.trim(),
+        facility: "morgan",
+      });
+      const updated = await api.getFloors("morgan");
+      setFloors(updated);
+      setNewFloorCode("");
+      setNewFloorName("");
+      setShowFloorForm(false);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCreatingFloor(false);
+    }
+  };
+
+  const toggleLocationCode = (code) => {
+    setSelectedLocationCodes((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
   };
 
   const submitRange = () => {
@@ -79,7 +122,7 @@ export default function DataEntry() {
       setError("Enter a range number between 1 and 99.");
       return;
     }
-    const suggested = defaultSides(floorCode, rangeNumber);
+    const suggested = defaultSides(facility, floorCode, rangeNumber);
     setActiveSides(suggested);
     setError("");
     setStep(STEP.SIDES);
@@ -108,8 +151,6 @@ export default function DataEntry() {
         return;
       }
     }
-
-    // Build shelf count + shelves data skeleton
     const counts = {};
     const shelves = {};
     const batch = {};
@@ -191,6 +232,7 @@ export default function DataEntry() {
         range_number: zeroPad(parseInt(rangeNumber, 10)),
         material_type: materialType,
         notes: notes || null,
+        location_codes: selectedLocationCodes,
         sides,
       });
 
@@ -204,6 +246,7 @@ export default function DataEntry() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const floor = floors.find((f) => f.id === floorId);
+  const facilityLabel = facility === "morgan" ? "Morgan Library" : "Storage";
 
   return (
     <div className="max-w-2xl">
@@ -213,6 +256,9 @@ export default function DataEntry() {
         </button>
         <span className="text-gray-300">/</span>
         <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>Data Entry</h1>
+        <span className="ml-auto text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">
+          {facilityLabel}
+        </span>
       </div>
 
       <StepBar current={step} />
@@ -221,23 +267,84 @@ export default function DataEntry() {
 
       {/* STEP 1 — Floor */}
       {step === STEP.FLOOR && (
-        <Section title="Storage">
-          <div className="grid grid-cols-3 gap-3">
-            {floors.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => pickFloor(f)}
-                className="rounded-lg border border-gray-200 bg-white hover:border-green-700 hover:shadow px-4 py-3 text-left transition-all"
-              >
-                <div className="font-semibold text-gray-800">{f.display_name}</div>
-                <div className="text-xs text-gray-400 mt-0.5">Floor {f.code}</div>
-              </button>
-            ))}
-          </div>
+        <Section title={facilityLabel}>
+          {floors.length === 0 && !showFloorForm ? (
+            <p className="text-sm text-gray-400 mb-4">
+              No floors created yet for {facilityLabel}.
+              {facility === "morgan" && " Add one below to get started."}
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {floors.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => pickFloor(f)}
+                  className="rounded-lg border border-gray-200 bg-white hover:border-green-700 hover:shadow px-4 py-3 text-left transition-all"
+                >
+                  <div className="font-semibold text-gray-800">{f.display_name}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{f.code}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Morgan: inline floor creation */}
+          {facility === "morgan" && (
+            <div className="pt-3 border-t border-gray-100">
+              {!showFloorForm ? (
+                <button
+                  onClick={() => setShowFloorForm(true)}
+                  className="text-sm text-gray-500 hover:text-green-700 transition-colors"
+                >
+                  + Add shelf location
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-gray-600">New Floor</p>
+                  <div className="flex gap-3 flex-wrap">
+                    <div>
+                      <Label>Code <span className="text-gray-400">(basement)</span></Label>
+                      <input
+                        className="mt-1 block w-32 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                        value={newFloorCode}
+                        onChange={(e) => setNewFloorCode(e.target.value)}
+                        placeholder="e.g. 1"
+                      />
+                    </div>
+                    <div>
+                      <Label>Display Name</Label>
+                      <input
+                        className="mt-1 block w-48 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                        value={newFloorName}
+                        onChange={(e) => setNewFloorName(e.target.value)}
+                        placeholder="e.g. First Floor"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={createFloor}
+                      disabled={creatingFloor}
+                      className="px-4 py-1.5 text-sm font-medium text-white rounded-lg disabled:opacity-50"
+                      style={{ backgroundColor: "#1E4D2B" }}
+                    >
+                      {creatingFloor ? "Creating…" : "Create Floor"}
+                    </button>
+                    <button
+                      onClick={() => { setShowFloorForm(false); setNewFloorCode(""); setNewFloorName(""); }}
+                      className="px-4 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </Section>
       )}
 
-      {/* STEP 2 — Range number + material */}
+      {/* STEP 2 — Range number + material + location codes */}
       {step === STEP.RANGE && (
         <Section title={`Range — ${floor?.display_name}`}>
           <div className="space-y-4">
@@ -262,6 +369,37 @@ export default function DataEntry() {
                 {MATERIAL_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </div>
+
+            {/* Morgan: location codes picker */}
+            {facility === "morgan" && morganLocations.length > 0 && (
+              <div>
+                <Label>
+                  Location Codes on this Range{" "}
+                  <span className="text-gray-400 font-normal">(select all that apply)</span>
+                </Label>
+                <p className="text-xs text-gray-400 mt-0.5 mb-2">
+                  Physical ranges often hold items from more than one Alma location.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {morganLocations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => toggleLocationCode(loc.code)}
+                      className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                        selectedLocationCodes.includes(loc.code)
+                          ? "bg-green-700 text-white border-green-700"
+                          : "bg-white text-gray-600 border-gray-300 hover:border-green-600"
+                      }`}
+                    >
+                      <span className="font-mono font-semibold">{loc.code}</span>
+                      <span className="ml-1.5 text-xs opacity-75">{loc.display_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <Label>Notes <span className="text-gray-400">(optional)</span></Label>
               <input
@@ -352,8 +490,6 @@ export default function DataEntry() {
                     <div className="font-semibold text-gray-700 mb-3">
                       Side {side} · Ladder {zeroPad(lNum)}
                     </div>
-
-                    {/* Shelf count + generate */}
                     <div className="flex items-center gap-3 mb-3">
                       <input
                         type="number" min="1" max="99"
@@ -369,10 +505,8 @@ export default function DataEntry() {
                         Generate shelves
                       </button>
                     </div>
-
                     {shelves.length > 0 && (
                       <>
-                        {/* Batch fill */}
                         <div className="flex items-center gap-2 mb-3">
                           <input
                             type="number" step="0.5" min="0"
@@ -388,8 +522,6 @@ export default function DataEntry() {
                             Fill ladder
                           </button>
                         </div>
-
-                        {/* Per-shelf width grid */}
                         <div className="grid grid-cols-4 gap-2">
                           {shelves.map((s, idx) => (
                             <div key={idx} className="flex flex-col gap-0.5">
@@ -422,16 +554,16 @@ export default function DataEntry() {
       {step === STEP.REVIEW && (
         <Section title="Review & Save">
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-5 py-4 text-sm space-y-2 mb-6">
-            <Row label="Floor" value={floor?.display_name} />
-            <Row label="Range" value={zeroPad(parseInt(rangeNumber, 10))} />
+            <Row label="Facility"      value={facilityLabel} />
+            <Row label="Floor"         value={floor?.display_name} />
+            <Row label="Range"         value={zeroPad(parseInt(rangeNumber, 10))} />
             <Row label="Material type" value={materialType} />
+            {selectedLocationCodes.length > 0 && (
+              <Row label="Location codes" value={selectedLocationCodes.join(", ")} />
+            )}
             <Row label="Sides" value={activeSides.join(", ")} />
             {activeSides.map((side) => (
-              <Row
-                key={side}
-                label={`Side ${side} ladders`}
-                value={ladderCounts[side]}
-              />
+              <Row key={side} label={`Side ${side} ladders`} value={ladderCounts[side]} />
             ))}
             <Row
               label="Total shelves"
@@ -471,7 +603,7 @@ function StepBar({ current }) {
             <div
               className={[
                 "w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold",
-                done ? "bg-green-700 text-white" : active ? "bg-green-700 text-white" : "bg-gray-200 text-gray-400",
+                done || active ? "bg-green-700 text-white" : "bg-gray-200 text-gray-400",
               ].join(" ")}
             >
               {done ? "✓" : s}
@@ -500,8 +632,8 @@ function Label({ children }) {
 
 function Row({ label, value }) {
   return (
-    <div className="flex gap-2">
-      <span className="text-gray-500 w-36 shrink-0">{label}</span>
+    <div className="flex justify-between">
+      <span className="text-gray-500">{label}</span>
       <span className="font-medium text-gray-800">{value}</span>
     </div>
   );
@@ -511,7 +643,7 @@ function Back({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="px-4 py-2 rounded-lg text-sm border border-gray-300 bg-white hover:border-gray-400 transition-all"
+      className="px-4 py-2 rounded-lg text-sm border border-gray-300 hover:bg-gray-50 transition-all"
     >
       Back
     </button>
@@ -525,7 +657,8 @@ function Next({ onClick, label = "Next" }) {
       className="px-5 py-2 rounded-lg text-sm font-semibold text-white transition-all"
       style={{ backgroundColor: "#1E4D2B" }}
     >
-      {label} →
+      {label}
     </button>
   );
 }
+

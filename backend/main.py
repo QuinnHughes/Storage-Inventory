@@ -20,7 +20,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api import settings as settings_router, mapping as mapping_router, collections as collections_router, analytics as analytics_router
+from api import (
+    settings as settings_router,
+    mapping as mapping_router,
+    collections as collections_router,
+    analytics as analytics_router,
+    scanning as scanning_router,
+)
 from db.session import create_tables
 
 app = FastAPI(title="Storage Inventory", version="1.0.0")
@@ -39,6 +45,7 @@ app.include_router(settings_router.router,     prefix="/api/settings",     tags=
 app.include_router(mapping_router.router,      prefix="/api/mapping",      tags=["mapping"])
 app.include_router(collections_router.router,  prefix="/api/collections",  tags=["collections"])
 app.include_router(analytics_router.router,    prefix="/api/analytics",    tags=["analytics"])
+app.include_router(scanning_router.router,     prefix="/api/scanning",     tags=["scanning"])
 
 
 @app.get("/api/health")

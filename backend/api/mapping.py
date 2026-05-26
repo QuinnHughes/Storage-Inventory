@@ -6,17 +6,19 @@ import re
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from db import crud, models
 from db.session import get_db
 from schemas.mapping import (
-    FloorOut, RangeCreate, RangeOut, RangeSummary, RangeUpdate,
+    FloorOut, FloorCreate,
+    RangeCreate, RangeOut, RangeSummary, RangeUpdate,
     SearchResult, ShelfWidthUpdate, MATERIAL_TYPES,
     MapShapeCreate, MapShapeUpdate, MapShapeBulkUpdate, MapShapeOut,
     PieceTemplateCreate, PieceTemplateOut,
     ShapeGroupCreate, ShapeGroupUpdate, ShapeGroupOut,
+    LocationCreate, LocationOut,
 )
 
 router = APIRouter()
@@ -25,8 +27,22 @@ router = APIRouter()
 # ── Floors ────────────────────────────────────────────────────────────────────
 
 @router.get("/floors", response_model=list[FloorOut])
-def get_floors(db: Session = Depends(get_db)):
-    return crud.list_floors(db)
+def get_floors(facility: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    return crud.list_floors(db, facility=facility)
+
+
+@router.post("/floors", response_model=FloorOut, status_code=201)
+def create_floor(body: FloorCreate, db: Session = Depends(get_db)):
+    existing = crud.get_floor_by_code(db, body.code)
+    if existing:
+        raise HTTPException(409, f"Floor with code '{body.code}' already exists")
+    return crud.create_floor(db, body.code, body.display_name, body.facility)
+
+
+@router.delete("/floors/{floor_id}", status_code=204)
+def delete_floor(floor_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_floor(db, floor_id):
+        raise HTTPException(404, "Floor not found")
 
 
 # ── Ranges ────────────────────────────────────────────────────────────────────
@@ -61,7 +77,10 @@ def create_range(body: RangeCreate, db: Session = Depends(get_db)):
     if body.material_type and body.material_type not in MATERIAL_TYPES:
         raise HTTPException(422, f"Invalid material_type. Choose from: {', '.join(MATERIAL_TYPES)}")
 
-    rng = crud.create_range(db, body.floor_id, body.range_number, body.material_type, body.notes)
+    rng = crud.create_range(
+        db, body.floor_id, body.range_number,
+        body.material_type, body.notes, body.location_codes,
+    )
 
     for side_in in body.sides:
         side = crud.create_range_side(db, rng.id, side_in.side_letter)
@@ -82,7 +101,7 @@ def create_range(body: RangeCreate, db: Session = Depends(get_db)):
 def update_range(range_id: int, body: RangeUpdate, db: Session = Depends(get_db)):
     if body.material_type and body.material_type not in MATERIAL_TYPES:
         raise HTTPException(422, f"Invalid material_type. Choose from: {', '.join(MATERIAL_TYPES)}")
-    rng = crud.update_range(db, range_id, body.material_type, body.notes)
+    rng = crud.update_range(db, range_id, body.material_type, body.notes, body.location_codes)
     if not rng:
         raise HTTPException(404, "Range not found")
     return rng
@@ -245,6 +264,32 @@ def remove_from_group(group_id: int, shape_id: int, db: Session = Depends(get_db
     crud.remove_shape_from_group(db, shape_id)
 
 
+# ── Locations ─────────────────────────────────────────────────────────────────
+
+_FACILITY_TO_COLLECTION = {"morgan": "Morgan", "storage": "Storage"}
+
+
+@router.get("/locations", response_model=list[LocationOut])
+def get_locations(facility: str = Query("morgan"), db: Session = Depends(get_db)):
+    collection_name = _FACILITY_TO_COLLECTION.get(facility.lower(), "Morgan")
+    return crud.list_locations(db, collection_name)
+
+
+@router.post("/locations", response_model=LocationOut, status_code=201)
+def create_location(body: LocationCreate, db: Session = Depends(get_db)):
+    collection_name = _FACILITY_TO_COLLECTION.get(body.facility.lower(), "Morgan")
+    try:
+        return crud.create_location(db, collection_name, body.code, body.display_name)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.delete("/locations/{location_id}", status_code=204)
+def delete_location(location_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_location(db, location_id):
+        raise HTTPException(404, "Location not found")
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _parse_prefix(prefix: str):
     """Parse S-{floor}-{range}{side}-{ladder} into components."""
@@ -291,6 +336,7 @@ def _summarize_range(rng: models.Range) -> dict:
         "range_number": rng.range_number,
         "material_type": rng.material_type,
         "notes": rng.notes,
+        "location_codes": [c.strip() for c in rng.location_codes.split(",") if c.strip()] if rng.location_codes else [],
         "side_count": len(rng.sides),
         "ladder_count": ladder_count,
         "shelf_count": shelf_count,

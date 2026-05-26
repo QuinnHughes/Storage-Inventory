@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from db import models
 from db.session import get_db
+from core.callnumber import normalize_lc
 
 router = APIRouter()
 
@@ -212,6 +213,13 @@ async def upload_analytics(
 
         valid.append((barcode, location_id, loc_code_raw, row))
 
+    # Deduplicate by barcode: if the same barcode appears more than once in the
+    # file, keep only the last occurrence (last-wins matches Alma re-export behaviour).
+    seen_idx: dict[str, int] = {}
+    for i, (barcode, *_) in enumerate(valid):
+        seen_idx[barcode] = i
+    valid = [valid[i] for i in sorted(seen_idx.values())]
+
     # ── Pass 2: pre-fetch all matching barcodes in ONE query ──────────────────
     incoming_barcodes = {b for b, *_ in valid}
     existing_map: dict[str, models.IlsRecord] = {}
@@ -231,10 +239,12 @@ async def upload_analytics(
     # ── Pass 3: upsert in batches ─────────────────────────────────────────────
     try:
         for idx, (barcode, location_id, loc_code_raw, row) in enumerate(valid):
+            raw_cn = v(row, "call_number")
             fields = {
                 "location_id":      location_id,
                 "barcode":          barcode,
-                "call_number":      v(row, "call_number"),
+                "call_number":      raw_cn,
+                "call_number_norm": normalize_lc(raw_cn) if raw_cn else None,
                 "item_call_number": v(row, "item_call_number"),
                 "item_policy":      v(row, "item_policy"),
                 "description":      v(row, "description"),

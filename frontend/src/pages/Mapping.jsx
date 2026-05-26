@@ -1,15 +1,18 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 
-const cards = [
+const FACILITY_KEY = "mappingFacility";
+
+const BASE_CARDS = [
   {
     title: "View Map",
-    description: "Browse floor-by-floor visual plans of the storage facility.",
+    description: "Browse floor-by-floor visual plans of the facility.",
     to: "/mapping/view",
     icon: "🗺",
   },
   {
     title: "Data Entry",
-    description: "Enter the physical structure of the building — ranges, sides, ladders, and shelves.",
+    description: "Enter the physical structure — ranges, sides, ladders, and shelves.",
     to: "/mapping/data-entry",
     icon: "📋",
   },
@@ -33,15 +36,59 @@ const cards = [
   },
 ];
 
+const LOCATIONS_CARD = {
+  title: "Locations",
+  description:
+    "Manage Morgan Library location codes. Add custom codes for areas that contain items from multiple Alma locations.",
+  to: "/mapping/locations",
+  icon: "🏷️",
+};
+
+const DESCRIPTIONS = {
+  storage: "Build and maintain a digital model of the physical storage facility.",
+  morgan:  "Build and maintain a digital map of Morgan Library's physical shelving layout.",
+};
+
 export default function Mapping() {
   const navigate = useNavigate();
+  const [facility, setFacility] = useState(
+    () => localStorage.getItem(FACILITY_KEY) || "storage"
+  );
+
+  const changeFacility = (f) => {
+    setFacility(f);
+    localStorage.setItem(FACILITY_KEY, f);
+  };
+
+  const cards = facility === "morgan" ? [...BASE_CARDS, LOCATIONS_CARD] : BASE_CARDS;
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-2" style={{ color: "#1E4D2B" }}>Mapping</h1>
-      <p className="text-base text-gray-500 mb-10">
-        Build and maintain a digital model of the physical storage facility.
-      </p>
+      <div className="flex items-start justify-between mb-2">
+        <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Mapping</h1>
+
+        {/* Facility switcher */}
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mt-1">
+          {[
+            { key: "storage", label: "Storage" },
+            { key: "morgan",  label: "Morgan Library" },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => changeFacility(key)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                facility === key
+                  ? "bg-white text-gray-800 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-base text-gray-500 mb-10">{DESCRIPTIONS[facility]}</p>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((card) => (

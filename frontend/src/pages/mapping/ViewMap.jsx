@@ -42,7 +42,8 @@ export default function ViewMap() {
   const [tooltip, setTooltip] = useState(null); // { shape, x, y }
 
   useEffect(() => {
-    api.getFloors()
+    const facility = localStorage.getItem("mappingFacility") || "storage";
+    api.getFloors(facility)
       .then((fs) => {
         setFloors(fs);
         if (fs.length > 0) loadFloor(fs[0]);

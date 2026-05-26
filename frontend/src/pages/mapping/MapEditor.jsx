@@ -166,7 +166,8 @@ export default function MapEditor() {
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
   // â€” Load on mount â€”
   useEffect(() => {
-    api.getFloors().then((fs) => {
+    const facility = localStorage.getItem("mappingFacility") || "storage";
+    api.getFloors(facility).then((fs) => {
       setFloors(fs);
       if (fs.length > 0) loadFloor(fs[0]);
     }).catch(() => setError("Could not load floors."));

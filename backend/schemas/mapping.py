@@ -44,12 +44,14 @@ class RangeCreate(BaseModel):
     range_number: str
     material_type: Optional[str] = None
     notes: Optional[str] = None
+    location_codes: list[str] = []
     sides: list[SideIn]
 
 
 class RangeUpdate(BaseModel):
     material_type: Optional[str] = None
     notes: Optional[str] = None
+    location_codes: Optional[list[str]] = None
 
 
 class ShelfWidthUpdate(BaseModel):
@@ -89,7 +91,17 @@ class RangeOut(BaseModel):
     range_number: str
     material_type: Optional[str]
     notes: Optional[str]
+    location_codes: list[str] = []
     sides: list[SideOut]
+
+    @field_validator("location_codes", mode="before")
+    @classmethod
+    def _parse_location_codes(cls, v):
+        if not v:
+            return []
+        if isinstance(v, list):
+            return v
+        return [c.strip() for c in v.split(",") if c.strip()]
 
     model_config = {"from_attributes": True}
 
@@ -101,6 +113,7 @@ class RangeSummary(BaseModel):
     range_number: str
     material_type: Optional[str]
     notes: Optional[str]
+    location_codes: list[str]
     side_count: int
     ladder_count: int
     shelf_count: int
@@ -113,8 +126,30 @@ class FloorOut(BaseModel):
     id: int
     code: str
     display_name: str
+    facility: str
 
     model_config = {"from_attributes": True}
+
+
+class FloorCreate(BaseModel):
+    code: str
+    display_name: str
+    facility: str = "storage"
+
+
+class LocationOut(BaseModel):
+    id: int
+    code: str
+    display_name: str
+    collection_id: int
+
+    model_config = {"from_attributes": True}
+
+
+class LocationCreate(BaseModel):
+    code: str
+    display_name: str
+    facility: str = "morgan"
 
 
 class SearchResult(BaseModel):

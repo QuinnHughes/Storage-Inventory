@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Planning
+Project Planning.txt
+Shelf Reading Tool Notes.txt
+Analytics for Storage Inventory app.csv
+ 
+# Dependency directories and files
+node_modules/
+package-lock.json
+package.json
+
+
