@@ -1,0 +1,105 @@
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.sidebar {
+  width: 260px;
+  background: #1E4D2B;
+  padding: 20px 16px;
+  border-right: 3px solid #C8C372;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar h2 {
+  font-size: 1.3em;
+  margin-bottom: 4px;
+  margin-top: 6px;
+  font-weight: 700;
+  color: #C8C372;
+  letter-spacing: 0.5px;
+}
+
+.sidebar .sidebar-subtitle {
+  font-size: 0.78em;
+  color: rgba(200, 195, 114, 0.6);
+  margin-bottom: 28px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.sidebar h3 {
+  font-size: 0.75em;
+  margin-top: 20px;
+  margin-bottom: 8px;
+  color: rgba(200, 195, 114, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px 0;
+}
+
+.sidebar ul li {
+  margin-bottom: 4px;
+}
+
+.sidebar ul li a {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.95em;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar ul li a:hover {
+  background: rgba(200, 195, 114, 0.18);
+  color: #C8C372;
+}
+
+.sidebar ul li a.active {
+  background: #C8C372;
+  color: #1E4D2B;
+  font-weight: 700;
+}
+
+.sidebar .db-status {
+  margin-top: auto;
+  padding: 12px 10px 6px;
+  font-size: 0.8em;
+  color: rgba(200, 195, 114, 0.55);
+  border-top: 1px solid rgba(200, 195, 114, 0.2);
+}
+
+.sidebar .db-status.ok {
+  color: #7fcc7f;
+}
+
+.sidebar .db-status.err {
+  color: #f08080;
+  font-weight: 600;
+}
+
+.main-content {
+  flex-grow: 1;
+  overflow-y: auto;
+  width: 100%;
+  min-width: 0;
+  background: #f5f5f4;
+  padding: 0;
+}

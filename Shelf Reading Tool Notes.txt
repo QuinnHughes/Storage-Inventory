@@ -1,0 +1,27 @@
+Tool for shelf reading in alma.
+
+Goal: The idea is to be able to use a combination of alma anaytics along with scanning to find issues in the collection.
+
+Known Issues to start:
+1. Call numbers will need to be normalized so that they can can actually be read and sorted.
+2. Need to get a new alma api key to be able to setup daily anaytics runs
+3. This library is sorted in LC not storage call numbers so what we will do is a combination of storage call number format to find shelves for scanning and recording but most our work will be based of the LC call number.
+
+General Flow:
+
+1. Call to Alma API or manually upload analytics for items, fields needed are: Barcode, Call Number, Status, Location Code, Location Name, Item Call Number, Lifecycle, Fulfillment notes. (keep in mind these should not be case sensitive)
+
+2. Normalize call numbers and index barcodes for quick searches of full records.
+
+3. Once alma anaytical items are uploaded and normalized we will begin by selecting a range, ladder, shelf and begin scanning in an entire shelf of barcodes in order. 
+
+4. Once the entire shelf has been scanned we will upload the excel sheet to program to do a few things. 
+	-First it will check that each barcode scanned matches a previously uploaded barcode and if yes start search for full item if not mark it as no record in alma.
+	-Once we have records matching our barcodes we scanned we want to take those records LC call numbers that we normalized and sort them to find out if they are in order as we scanned them in.
+	-After they have been sorted in order if they are out of order we want the discrepencies to appear with a notice for which item is out of place and if it is out of place on the shelf or out of place entirely.
+	-Once we have out out of place errors we also want to check if any items have fufillment notices or have a status that is not item in place or active and if they are we need that to be known as well
+	-Once the entire shelf has been sorted out for errors our last thing we want to do is measure the shelf where the user can just enter a inches value for the amount of material on that shelf. 
+	
+Additional Features:
+-
+	

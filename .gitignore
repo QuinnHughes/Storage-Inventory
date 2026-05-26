@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Node root
+node_modules/
+
+# Database / config
+*.dump
+config.ini
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store

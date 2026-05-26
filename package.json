@@ -1,0 +1,48 @@
+{
+  "name": "storage-inventory",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python main.py",
+    "electron:dev": "electron .",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "pyinstaller StorageInventory.spec",
+    "build": "npm run build:frontend && npm run build:backend && electron-builder",
+    "install:backend": "pip install -r backend/requirements.txt"
+  },
+  "build": {
+    "appId": "com.storage.inventory",
+    "productName": "Storage Inventory",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "backend_dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend_dist/",
+        "to": "backend_dist/",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
