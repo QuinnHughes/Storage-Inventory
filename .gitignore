@@ -26,3 +26,7 @@ config.ini
 .vscode/
 .idea/
 *.DS_Store
+
+# Notes
+*.txt
+*.csv
