@@ -37,6 +37,7 @@ router = APIRouter()
 
 class SessionCreate(BaseModel):
     shelf_id:       Optional[int]   = None
+    range_side_id:  Optional[int]   = None
     location_label: Optional[str]   = None
     notes:          Optional[str]   = None
 
@@ -76,9 +77,20 @@ class ScanItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LocationInfo(BaseModel):
+    floor_id:           int
+    floor_display_name: str
+    range_id:           int
+    range_number:       str
+    side_id:            int
+    side_letter:        str
+    location_codes:     list[str]
+
+
 class SessionOut(BaseModel):
     id:                 int
     shelf_id:           Optional[int]
+    range_side_id:      Optional[int]
     location_label:     Optional[str]
     status:             str
     notes:              Optional[str]
@@ -87,6 +99,7 @@ class SessionOut(BaseModel):
     analyzed_at:        Optional[datetime]
     item_count:         int
     discrepancy_count:  int
+    location:           Optional[LocationInfo] = None
 
     model_config = {"from_attributes": True}
 
@@ -121,11 +134,36 @@ def _resolve_item(item: models.ScanItem, db: Session) -> None:
         item.fulfillment_note = rec.fulfillment_note
 
 
+def _get_location_info(s: models.ScanSession) -> Optional[dict]:
+    """Build a LocationInfo dict by walking the range_side → range → floor chain."""
+    if not s.range_side_id:
+        return None
+    try:
+        side = s.range_side
+        if side is None:
+            return None
+        rng = side.range
+        floor = rng.floor
+        codes = [c.strip() for c in (rng.location_codes or "").split(",") if c.strip()]
+        return {
+            "floor_id":           floor.id,
+            "floor_display_name": floor.display_name,
+            "range_id":           rng.id,
+            "range_number":       rng.range_number,
+            "side_id":            side.id,
+            "side_letter":        side.side_letter,
+            "location_codes":     codes,
+        }
+    except Exception:
+        return None
+
+
 def _to_out(s: models.ScanSession) -> dict:
     return {
         **{c.name: getattr(s, c.name) for c in s.__table__.columns},
         "item_count":        len(s.items),
         "discrepancy_count": len(s.discrepancies),
+        "location":          _get_location_info(s),
     }
 
 
@@ -136,6 +174,9 @@ def _session_or_404(session_id: int, db: Session) -> models.ScanSession:
             joinedload(models.ScanSession.items)
             .joinedload(models.ScanItem.discrepancy),
             joinedload(models.ScanSession.discrepancies),
+            joinedload(models.ScanSession.range_side)
+            .joinedload(models.RangeSide.range)
+            .joinedload(models.Range.floor),
         )
         .filter(models.ScanSession.id == session_id)
         .first()
@@ -149,9 +190,27 @@ def _session_or_404(session_id: int, db: Session) -> models.ScanSession:
 
 @router.post("/sessions", response_model=SessionDetail, status_code=201)
 def create_session(body: SessionCreate, db: Session = Depends(get_db)):
+    # Auto-generate a location_label when a range_side_id is provided
+    location_label = body.location_label
+    if body.range_side_id and not location_label:
+        side = (
+            db.query(models.RangeSide)
+            .options(
+                joinedload(models.RangeSide.range)
+                .joinedload(models.Range.floor)
+            )
+            .filter(models.RangeSide.id == body.range_side_id)
+            .first()
+        )
+        if side:
+            rng = side.range
+            floor = rng.floor
+            location_label = f"{floor.display_name} · Range {rng.range_number} · Side {side.side_letter}"
+
     s = models.ScanSession(
         shelf_id=body.shelf_id,
-        location_label=body.location_label,
+        range_side_id=body.range_side_id,
+        location_label=location_label,
         notes=body.notes,
         status="scanning",
     )
@@ -161,6 +220,7 @@ def create_session(body: SessionCreate, db: Session = Depends(get_db)):
     s.items = []
     s.discrepancies = []
     db.commit()
+    s = _session_or_404(s.id, db)
     return {**_to_out(s), "items": [], "discrepancies": []}
 
 
@@ -170,9 +230,20 @@ def list_sessions(
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    q = db.query(models.ScanSession).order_by(models.ScanSession.created_at.desc())
-    total = q.count()
-    rows = q.offset((page - 1) * per_page).limit(per_page).all()
+    # Count without joins to avoid inflated row counts
+    total = db.query(models.ScanSession).count()
+    rows = (
+        db.query(models.ScanSession)
+        .options(
+            joinedload(models.ScanSession.range_side)
+            .joinedload(models.RangeSide.range)
+            .joinedload(models.Range.floor)
+        )
+        .order_by(models.ScanSession.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
 
     items = []
     for s in rows:
@@ -182,6 +253,7 @@ def list_sessions(
                                    .filter(models.ScanItem.session_id == s.id).count(),
             "discrepancy_count": db.query(models.ScanDiscrepancy)
                                    .filter(models.ScanDiscrepancy.session_id == s.id).count(),
+            "location":          _get_location_info(s),
         })
     return {"items": items, "total": total}
 
@@ -366,7 +438,14 @@ def analyze(session_id: int, body: AnalyzeBody, db: Session = Depends(get_db)):
         _resolve_item(item, db)
     db.flush()
 
-    discs = _run_analysis(s, location_code=body.location_code)
+    # Auto-detect location_code from the linked range side when not explicitly supplied
+    location_code = body.location_code
+    if not location_code and s.range_side_id:
+        loc = _get_location_info(s)
+        if loc and len(loc["location_codes"]) == 1:
+            location_code = loc["location_codes"][0]
+
+    discs = _run_analysis(s, location_code=location_code)
     for d in discs:
         db.add(d)
 

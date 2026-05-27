@@ -9,7 +9,6 @@ import Jobs from "./pages/analytics/Jobs";
 import Mapping from "./pages/Mapping";
 import DataEntry from "./pages/mapping/DataEntry";
 import RangeList from "./pages/mapping/RangeList";
-import MapSearch from "./pages/mapping/MapSearch";
 import ViewMap from "./pages/mapping/ViewMap";
 import MapEditor from "./pages/mapping/MapEditor";
 import Locations from "./pages/mapping/Locations";
@@ -30,7 +29,6 @@ export default function App() {
           <Route path="mapping" element={<Mapping />} />
           <Route path="mapping/data-entry" element={<DataEntry />} />
           <Route path="mapping/ranges" element={<RangeList />} />
-          <Route path="mapping/search" element={<MapSearch />} />
           <Route path="mapping/view" element={<ViewMap />} />
           <Route path="mapping/editor" element={<MapEditor />} />
           <Route path="mapping/locations" element={<Locations />} />

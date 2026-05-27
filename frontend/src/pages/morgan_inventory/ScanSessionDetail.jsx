@@ -74,7 +74,7 @@ export default function ScanSessionDetail() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [analyzeError, setAnalyzeError] = useState(null);
-  const [locationCode, setLocationCode] = useState("");
+  const [locationCode, setLocationCode] = useState(null); // null = auto
   const [activeTab, setActiveTab] = useState("items"); // items | discrepancies
 
   const inputRef = useRef();
@@ -86,6 +86,12 @@ export default function ScanSessionDetail() {
       .then(s => {
         setSession(s);
         setInches(s.inches_of_material != null ? String(s.inches_of_material) : "");
+        // Auto-select the only location code on first load
+        setLocationCode(prev => {
+          if (prev !== null) return prev; // user already chose something
+          const codes = s.location?.location_codes ?? [];
+          return codes.length === 1 ? codes[0] : null;
+        });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -202,9 +208,18 @@ export default function ScanSessionDetail() {
             className="text-xs text-gray-400 hover:text-gray-700 mb-1">
             ← Back to sessions
           </button>
-          <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
-            {session.location_label || "Scan Session #" + session.id}
-          </h1>
+          {session.location ? (
+            <>
+              <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
+                Range {session.location.range_number} · Side {session.location.side_letter}
+              </h1>
+              <p className="text-xs text-gray-400 mt-0.5">{session.location.floor_display_name}</p>
+            </>
+          ) : (
+            <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
+              {session.location_label || "Scan Session #" + session.id}
+            </h1>
+          )}
           <p className="text-xs text-gray-400 mt-0.5">
             {session.item_count} items &nbsp;·&nbsp;
             {session.discrepancy_count} discrepancies &nbsp;·&nbsp;
@@ -365,17 +380,45 @@ export default function ScanSessionDetail() {
           {isScanning && session.item_count > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-700">Analyse Shelf</h3>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Expected location code <span className="text-gray-400">(optional, for wrong-location checks)</span>
-                </label>
-                <input
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none"
-                  placeholder="e.g. ms, msu, ssy"
-                  value={locationCode}
-                  onChange={e => setLocationCode(e.target.value)}
-                />
-              </div>
+              {/* Location code selector */}
+              {session.location?.location_codes?.length > 0 ? (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1.5">
+                    Expected location code
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {session.location.location_codes.map(code => (
+                      <button key={code}
+                        onClick={() => setLocationCode(locationCode === code ? null : code)}
+                        className={`px-3 py-1 rounded-full text-xs border font-mono transition-colors ${
+                          locationCode === code
+                            ? "bg-green-700 text-white border-green-700"
+                            : "bg-white text-gray-600 border-gray-300 hover:border-green-600 hover:text-green-800"
+                        }`}>
+                        {code}
+                      </button>
+                    ))}
+                    {locationCode && (
+                      <button onClick={() => setLocationCode(null)}
+                        className="text-xs text-gray-400 hover:text-gray-600 px-1">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Expected location code <span className="text-gray-400">(optional, for wrong-location checks)</span>
+                  </label>
+                  <input
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none"
+                    placeholder="e.g. ms, msu, ssy"
+                    value={locationCode ?? ""}
+                    onChange={e => setLocationCode(e.target.value || null)}
+                  />
+                </div>
+              )}
               {analyzeError && <p className="text-xs text-red-600">{analyzeError}</p>}
               <button
                 onClick={runAnalysis}

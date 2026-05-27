@@ -23,12 +23,6 @@ const BASE_CARDS = [
     icon: "📂",
   },
   {
-    title: "Search",
-    description: "Look up any location by call number prefix to see its structure and totals.",
-    to: "/mapping/search",
-    icon: "🔍",
-  },
-  {
     title: "Map Editor",
     description: "Build an interactive top-down floor plan with scaled, snappable range shapes.",
     to: "/mapping/editor",
