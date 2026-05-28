@@ -148,9 +148,14 @@ def get_ladder(db: Session, ladder_id: int) -> Optional[models.Ladder]:
 def bulk_create_shelves(
     db: Session, ladder_id: int, shelves: list[dict]
 ) -> list[models.Shelf]:
-    """shelves: list of {"shelf_number": str, "width_inches": float|None}"""
+    """shelves: list of {"shelf_number": str, "width_inches": float|None, "fill_inches": float|None}"""
     objs = [
-        models.Shelf(ladder_id=ladder_id, shelf_number=s["shelf_number"], width_inches=s.get("width_inches"))
+        models.Shelf(
+            ladder_id=ladder_id,
+            shelf_number=s["shelf_number"],
+            width_inches=s.get("width_inches"),
+            fill_inches=s.get("fill_inches"),
+        )
         for s in shelves
     ]
     db.bulk_save_objects(objs)
@@ -162,14 +167,33 @@ def get_shelf(db: Session, shelf_id: int) -> Optional[models.Shelf]:
     return db.query(models.Shelf).filter(models.Shelf.id == shelf_id).first()
 
 
-def update_shelf_width(db: Session, shelf_id: int, width_inches: Optional[float]) -> Optional[models.Shelf]:
+def update_shelf_width(db: Session, shelf_id: int, width_inches: Optional[float], fill_inches: Optional[float] = None) -> Optional[models.Shelf]:
     obj = get_shelf(db, shelf_id)
     if not obj:
         return None
     obj.width_inches = width_inches
+    obj.fill_inches = fill_inches
     db.commit()
     db.refresh(obj)
     return obj
+
+
+def delete_shelf(db: Session, shelf_id: int) -> bool:
+    obj = get_shelf(db, shelf_id)
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
+
+
+def delete_ladder(db: Session, ladder_id: int) -> bool:
+    obj = get_ladder(db, ladder_id)
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
 
 
 # ── Map Shapes ─────────────────────────────────────────────────────────────────
@@ -366,4 +390,65 @@ def delete_location(db: Session, location_id: int) -> bool:
     db.delete(obj)
     db.commit()
     return True
+
+
+# ── Resolution Options ────────────────────────────────────────────────────────
+
+def list_resolution_options(db: Session) -> list[models.ResolutionOption]:
+    return (
+        db.query(models.ResolutionOption)
+        .order_by(models.ResolutionOption.sort_order, models.ResolutionOption.id)
+        .all()
+    )
+
+
+def create_resolution_option(
+    db: Session,
+    name: str,
+    description: Optional[str] = None,
+    sort_order: int = 0,
+) -> models.ResolutionOption:
+    obj = models.ResolutionOption(name=name, description=description, sort_order=sort_order)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+def delete_resolution_option(db: Session, option_id: int) -> bool:
+    obj = db.query(models.ResolutionOption).filter(models.ResolutionOption.id == option_id).first()
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
+
+
+def resolve_discrepancy(
+    db: Session,
+    disc_id: int,
+    option_id: Optional[int],
+    notes: Optional[str],
+) -> Optional[models.ScanDiscrepancy]:
+    from datetime import datetime, timezone
+    disc = (
+        db.query(models.ScanDiscrepancy)
+        .filter(models.ScanDiscrepancy.id == disc_id)
+        .first()
+    )
+    if not disc:
+        return None
+    if option_id is not None:
+        disc.resolution_option_id = option_id
+        disc.resolution_notes     = notes
+        disc.resolved_at          = datetime.now(tz=timezone.utc)
+    else:
+        disc.resolution_option_id = None
+        disc.resolution_notes     = None
+        disc.resolved_at          = None
+    db.commit()
+    db.refresh(disc)
+    # Eager-load the relationship so the property works
+    _ = disc.resolution_option
+    return disc
 

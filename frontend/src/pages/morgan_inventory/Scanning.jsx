@@ -2,175 +2,268 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 
-const STATUS_COLOR = {
-  scanning: "bg-blue-100 text-blue-800",
-  analyzed: "bg-amber-100 text-amber-800",
-  complete: "bg-green-100 text-green-800",
-};
+// ── Shelf status helpers ──────────────────────────────────────────────────────
+
+function shelfClasses(shelf, creating) {
+  if (creating === shelf.id)
+    return "bg-gray-100 text-gray-400 border-gray-200 cursor-wait";
+  switch (shelf.last_status) {
+    case "complete":
+      return "bg-green-100 text-green-800 border-green-300 hover:bg-green-200";
+    case "analyzed":
+      return "bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200";
+    case "scanning":
+      return "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200";
+    default:
+      return "bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300";
+  }
+}
+
+function shelfTitle(shelf) {
+  if (shelf.last_scanned_at)
+    return `Last scanned: ${new Date(shelf.last_scanned_at).toLocaleDateString()}  (${shelf.session_count} session${shelf.session_count !== 1 ? "s" : ""})`;
+  return "Never scanned";
+}
+
+// ── Range progress helpers ────────────────────────────────────────────────────
+
+function rangeStats(range) {
+  let total = 0, done = 0;
+  for (const side of range.sides)
+    for (const ladder of side.ladders)
+      for (const shelf of ladder.shelves) {
+        total++;
+        if (shelf.session_count > 0) done++;
+      }
+  return { total, done };
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Scanning() {
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [newLabel, setNewLabel] = useState("");
 
-  const PER_PAGE = 20;
+  const [floors, setFloors] = useState([]);
+  const [selectedFloorId, setSelectedFloorId] = useState(null);
+  const [treeData, setTreeData] = useState(null);
+  const [loadingFloors, setLoadingFloors] = useState(true);
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [expandedRanges, setExpandedRanges] = useState(new Set());
+  const [creating, setCreating] = useState(null); // shelf.id currently being created
 
-  const load = () => {
-    setLoading(true);
-    api.listSessions(page, PER_PAGE)
-      .then(r => { setSessions(r.items); setTotal(r.total); })
+  // Load morgan floors on mount
+  useEffect(() => {
+    api.getFloors("morgan")
+      .then(data => {
+        setFloors(data);
+        if (data.length > 0) setSelectedFloorId(data[0].id);
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingFloors(false));
+  }, []);
+
+  // Reload tree when floor selection changes
+  useEffect(() => {
+    if (!selectedFloorId) return;
+    setLoadingTree(true);
+    setTreeData(null);
+    setExpandedRanges(new Set());
+    api.getFloorScanStatus(selectedFloorId)
+      .then(setTreeData)
+      .catch(() => {})
+      .finally(() => setLoadingTree(false));
+  }, [selectedFloorId]);
+
+  const toggleRange = (rangeId) => {
+    setExpandedRanges(prev => {
+      const next = new Set(prev);
+      next.has(rangeId) ? next.delete(rangeId) : next.add(rangeId);
+      return next;
+    });
   };
 
-  useEffect(load, [page]);
-
-  const startSession = async () => {
+  const handleShelfClick = async (shelf) => {
+    if (shelf.active_session_id) {
+      navigate(`/morgan/scanning/${shelf.active_session_id}`);
+      return;
+    }
+    setCreating(shelf.id);
     try {
-      const s = await api.createSession({ location_label: newLabel.trim() || null });
-      navigate(`/morgan/scanning/${s.id}`);
+      const session = await api.createSession({ shelf_id: shelf.id });
+      navigate(`/morgan/scanning/${session.id}`);
     } catch (e) {
       alert(e.message);
+      setCreating(null);
     }
   };
 
-  const deleteSession = async (id) => {
-    if (!confirm("Delete this scan session and all its data?")) return;
-    await api.deleteSession(id);
-    load();
-  };
-
-  const totalPages = Math.ceil(total / PER_PAGE);
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Scanning</h1>
-          <p className="text-sm text-gray-500 mt-1">Shelf-reading sessions — scan a shelf, analyse, find discrepancies.</p>
-        </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="px-4 py-2 rounded-lg text-sm font-medium text-white"
-          style={{ backgroundColor: "#1E4D2B" }}
-        >
-          + New Session
-        </button>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Scanning</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Select a location — expand a range, then click a shelf to start or resume scanning.
+        </p>
       </div>
 
-      {/* New session dialog */}
-      {creating && (
-        <div className="mb-6 bg-white border border-gray-200 rounded-xl shadow-sm p-5 max-w-xl">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">New Scan Session</h2>
-          <label className="block text-xs text-gray-500 mb-1">Location label (optional)</label>
-          <input
-            autoFocus
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2"
-            placeholder="e.g. Floor 1, Range 02A, Ladder 3, Shelf 4"
-            value={newLabel}
-            onChange={e => setNewLabel(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && startSession()}
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={startSession}
-              className="px-4 py-2 text-sm font-medium text-white rounded-lg"
-              style={{ backgroundColor: "#1E4D2B" }}
-            >
-              Start Scanning
-            </button>
-            <button
-              onClick={() => { setCreating(false); setNewLabel(""); }}
-              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {loading ? (
+      {loadingFloors ? (
         <p className="text-sm text-gray-400">Loading…</p>
-      ) : sessions.length === 0 ? (
-        <div className="text-center py-20 text-gray-400">
-          <p className="text-4xl mb-3">📋</p>
-          <p className="text-sm">No scan sessions yet. Start one above.</p>
+      ) : floors.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-4xl mb-3">🗺️</p>
+          <p className="text-sm">No floors found for Morgan. Add floors in Data Entry first.</p>
         </div>
       ) : (
         <>
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left">Location</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-right">Items</th>
-                  <th className="px-4 py-3 text-right">Discrepancies</th>
-                  <th className="px-4 py-3 text-left">Created</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {sessions.map(s => (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-gray-800">
-                        {s.location_label || <span className="text-gray-400 italic">No label</span>}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[s.status] ?? "bg-gray-100 text-gray-600"}`}>
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">{s.item_count}</td>
-                    <td className="px-4 py-3 text-right">
-                      {s.discrepancy_count > 0 ? (
-                        <span className="font-mono text-amber-700 font-medium">{s.discrepancy_count}</span>
-                      ) : (
-                        <span className="font-mono text-gray-400">{s.discrepancy_count}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {new Date(s.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => navigate(`/morgan/scanning/${s.id}`)}
-                        className="text-xs font-medium px-3 py-1 rounded-lg mr-2"
-                        style={{ color: "#1E4D2B" }}
-                      >
-                        {s.status === "scanning" ? "Continue" : "View"}
-                      </button>
-                      <button
-                        onClick={() => deleteSession(s.id)}
-                        className="text-xs text-red-400 hover:text-red-700 px-2 py-1"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Floor tabs */}
+          <div className="flex gap-2 mb-5 flex-wrap">
+            {floors.map(f => (
+              <button
+                key={f.id}
+                onClick={() => setSelectedFloorId(f.id)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  selectedFloorId === f.id
+                    ? "text-white border-transparent"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                }`}
+                style={selectedFloorId === f.id ? { backgroundColor: "#1E4D2B" } : {}}
+              >
+                {f.display_name}
+              </button>
+            ))}
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-              <span>{total} sessions</span>
-              <div className="flex gap-2">
-                <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                  className="px-3 py-1 border border-gray-300 rounded-lg disabled:opacity-40">← Prev</button>
-                <span className="px-3 py-1">{page} / {totalPages}</span>
-                <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-                  className="px-3 py-1 border border-gray-300 rounded-lg disabled:opacity-40">Next →</button>
-              </div>
+          {loadingTree ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : !treeData || treeData.ranges.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <p className="text-4xl mb-3">📦</p>
+              <p className="text-sm">No ranges defined for this floor. Add ranges in Data Entry.</p>
             </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {treeData.ranges.map(rng => {
+                  const { total, done } = rangeStats(rng);
+                  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                  const isExpanded = expandedRanges.has(rng.id);
+
+                  return (
+                    <div
+                      key={rng.id}
+                      className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
+                    >
+                      {/* Range header row */}
+                      <button
+                        onClick={() => toggleRange(rng.id)}
+                        className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <span
+                          className="text-base font-bold font-mono w-14 shrink-0"
+                          style={{ color: "#1E4D2B" }}
+                        >
+                          {rng.range_number}
+                        </span>
+
+                        {rng.material_type && (
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">
+                            {rng.material_type}
+                          </span>
+                        )}
+
+                        {/* Progress bar */}
+                        <div className="flex-1 flex items-center gap-2 min-w-0">
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: pct === 100 ? "#1E4D2B" : "#6EBF8B",
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs text-gray-400 shrink-0 tabular-nums">
+                            {done}/{total}
+                          </span>
+                        </div>
+
+                        <span className="text-gray-400 text-xs shrink-0 ml-1">
+                          {isExpanded ? "▲" : "▼"}
+                        </span>
+                      </button>
+
+                      {/* Expanded ladder/shelf view */}
+                      {isExpanded && (
+                        <div className="border-t border-gray-100 px-5 py-4 space-y-5">
+                          {rng.sides.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">No sides defined for this range.</p>
+                          ) : (
+                            rng.sides.map(side => (
+                              <div key={side.id}>
+                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                                  Side {side.side_letter}
+                                </p>
+
+                                {side.ladders.length === 0 ? (
+                                  <p className="text-xs text-gray-400 italic pl-1">No ladders defined.</p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {side.ladders.map(ladder => (
+                                      <div key={ladder.id} className="flex items-start gap-3">
+                                        <span className="text-xs font-mono text-gray-400 w-16 shrink-0 pt-1.5">
+                                          Ldr {ladder.ladder_number}
+                                        </span>
+
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {ladder.shelves.length === 0 ? (
+                                            <span className="text-xs text-gray-400 italic">No shelves.</span>
+                                          ) : (
+                                            ladder.shelves.map(shelf => (
+                                              <button
+                                                key={shelf.id}
+                                                onClick={() => handleShelfClick(shelf)}
+                                                disabled={creating === shelf.id}
+                                                title={shelfTitle(shelf)}
+                                                className={`w-10 h-10 text-xs font-mono rounded-lg border transition-colors ${shelfClasses(shelf, creating)}`}
+                                              >
+                                                {shelf.shelf_number}
+                                              </button>
+                                            ))
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Legend */}
+              <div className="mt-5 flex items-center gap-5 text-xs text-gray-500 flex-wrap">
+                <span className="font-medium text-gray-600">Legend:</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded border border-gray-200 bg-white inline-block" />
+                  Not scanned
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded border border-amber-300 bg-amber-100 inline-block" />
+                  In progress
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded border border-green-300 bg-green-100 inline-block" />
+                  Complete
+                </span>
+              </div>
+            </>
           )}
         </>
       )}

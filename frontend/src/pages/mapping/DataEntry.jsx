@@ -56,6 +56,7 @@ export default function DataEntry() {
   const [floorId, setFloorId]             = useState("");
   const [floorCode, setFloorCode]         = useState("");
   const [rangeNumber, setRangeNumber]     = useState("");
+  const [rangeEnd, setRangeEnd]           = useState("");
   const [materialType, setMaterialType]   = useState("general stacks");
   const [notes, setNotes]                 = useState("");
   const [selectedLocationCodes, setSelectedLocationCodes] = useState([]);
@@ -64,6 +65,15 @@ export default function DataEntry() {
   const [shelvesData, setShelvesData]     = useState({});
   const [shelfCounts, setShelfCounts]     = useState({});
   const [batchFill, setBatchFill]         = useState({});
+
+  // Ladders step
+  const [setAllLadderCount, setSetAllLadderCount]   = useState("");
+  const [editingSide, setEditingSide]               = useState(null);
+
+  // Shelves step
+  const [globalShelfCount, setGlobalShelfCount]     = useState("");
+  const [globalShelfWidth, setGlobalShelfWidth]     = useState("");
+  const [expandedLadderKeys, setExpandedLadderKeys] = useState(new Set());
 
   useEffect(() => {
     const fac = localStorage.getItem(FACILITY_KEY) || "storage";
@@ -80,6 +90,7 @@ export default function DataEntry() {
     setFloorId(floor.id);
     setFloorCode(floor.code);
     setRangeNumber("");
+    setRangeEnd("");
     setSelectedLocationCodes([]);
     setError("");
     setStep(STEP.RANGE);
@@ -117,9 +128,14 @@ export default function DataEntry() {
   };
 
   const submitRange = () => {
-    const n = parseInt(rangeNumber, 10);
-    if (!rangeNumber || isNaN(n) || n < 1 || n > 99) {
-      setError("Enter a range number between 1 and 99.");
+    const from = parseInt(rangeNumber, 10);
+    const to = rangeEnd ? parseInt(rangeEnd, 10) : from;
+    if (!rangeNumber || isNaN(from) || from < 1 || from > 99) {
+      setError("Enter a starting range number between 1 and 99.");
+      return;
+    }
+    if (rangeEnd && (isNaN(to) || to < from || to > 99)) {
+      setError("'To' must be a number ≥ 'From' and ≤ 99.");
       return;
     }
     const suggested = defaultSides(facility, floorCode, rangeNumber);
@@ -166,6 +182,7 @@ export default function DataEntry() {
     setShelfCounts(counts);
     setShelvesData(shelves);
     setBatchFill(batch);
+    setExpandedLadderKeys(new Set());
     setError("");
     setStep(STEP.SHELVES);
   };
@@ -177,32 +194,58 @@ export default function DataEntry() {
   };
 
   const applyBatchFill = (key) => {
-    const val = batchFill[key];
+    const widthVal = batchFill[key];
     setShelvesData((prev) => ({
       ...prev,
-      [key]: prev[key].map((s) => ({ ...s, width_inches: val })),
+      [key]: prev[key].map((s) => ({
+        ...s,
+        ...(widthVal !== "" && widthVal != null ? { width_inches: widthVal } : {}),
+      })),
     }));
   };
 
-  const setShelfWidth = (key, idx, val) => {
+  const applyGlobalFill = () => {
+    const count = parseInt(globalShelfCount, 10);
+    if (!count || count < 1) return;
+    const newShelves = {};
+    const newCounts = {};
+    activeSides.forEach((side) => {
+      const lc = parseInt(ladderCounts[side], 10);
+      for (let l = 1; l <= lc; l++) {
+        const key = `${side}-${l}`;
+        newShelves[key] = Array.from({ length: count }, (_, i) => ({
+          shelf_number: zeroPad(i + 1),
+          width_inches: globalShelfWidth,
+        }));
+        newCounts[key] = String(count);
+      }
+    });
+    setShelvesData((prev) => ({ ...prev, ...newShelves }));
+    setShelfCounts((prev) => ({ ...prev, ...newCounts }));
+    if (globalShelfWidth !== "") setBatchFill((prev) => {
+      const next = { ...prev };
+      Object.keys(newShelves).forEach(k => { next[k] = globalShelfWidth; });
+      return next;
+    });
+  };
+
+  const toggleExpandedLadder = (key) => {
+    setExpandedLadderKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const setShelfField = (key, idx, field, val) => {
     setShelvesData((prev) => {
       const updated = [...prev[key]];
-      updated[idx] = { ...updated[idx], width_inches: val };
+      updated[idx] = { ...updated[idx], [field]: val };
       return { ...prev, [key]: updated };
     });
   };
 
   const submitShelves = () => {
-    for (const side of activeSides) {
-      const lc = parseInt(ladderCounts[side], 10);
-      for (let l = 1; l <= lc; l++) {
-        const key = `${side}-${l}`;
-        if (!shelvesData[key] || shelvesData[key].length === 0) {
-          setError(`Generate and fill shelves for side ${side}, ladder ${l}.`);
-          return;
-        }
-      }
-    }
     setError("");
     setStep(STEP.REVIEW);
   };
@@ -219,22 +262,36 @@ export default function DataEntry() {
           const shelves = (shelvesData[key] || []).map((s) => ({
             shelf_number: s.shelf_number,
             width_inches: s.width_inches !== "" && s.width_inches !== null
-              ? parseFloat(s.width_inches)
-              : null,
+              ? parseFloat(s.width_inches) : null,
           }));
           return { ladder_number: zeroPad(lNum), shelves };
         });
         return { side_letter: side, ladders };
       });
 
-      await api.createRange({
-        floor_id: floorId,
-        range_number: zeroPad(parseInt(rangeNumber, 10)),
-        material_type: materialType,
-        notes: notes || null,
-        location_codes: selectedLocationCodes,
-        sides,
-      });
+      const from = parseInt(rangeNumber, 10);
+      const to = rangeEnd ? parseInt(rangeEnd, 10) : from;
+
+      if (from === to) {
+        await api.createRange({
+          floor_id: floorId,
+          range_number: zeroPad(from),
+          material_type: materialType,
+          notes: notes || null,
+          location_codes: selectedLocationCodes,
+          sides,
+        });
+      } else {
+        await api.bulkCreateRanges({
+          floor_id: floorId,
+          range_from: from,
+          range_to: to,
+          material_type: materialType,
+          notes: notes || null,
+          location_codes: selectedLocationCodes,
+          sides,
+        });
+      }
 
       navigate("/mapping/ranges");
     } catch (e) {
@@ -349,15 +406,25 @@ export default function DataEntry() {
         <Section title={`Range — ${floor?.display_name}`}>
           <div className="space-y-4">
             <div>
-              <Label>Range Number</Label>
-              <input
-                type="number" min="1" max="99"
-                value={rangeNumber}
-                onChange={(e) => setRangeNumber(e.target.value)}
-                placeholder="e.g. 15"
-                className="mt-1 block w-32 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
-              />
-              <p className="text-xs text-gray-400 mt-1">Enter just the number — will be zero-padded.</p>
+              <Label>Range Numbers</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="number" min="1" max="99"
+                  value={rangeNumber}
+                  onChange={(e) => setRangeNumber(e.target.value)}
+                  placeholder="From"
+                  className="w-28 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                />
+                <span className="text-gray-400 text-sm">to</span>
+                <input
+                  type="number" min="1" max="99"
+                  value={rangeEnd}
+                  onChange={(e) => setRangeEnd(e.target.value)}
+                  placeholder="To (optional)"
+                  className="w-36 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Single number or a range (e.g. 1 to 7). Numbers are zero-padded. Same structure is applied to all.</p>
             </div>
             <div>
               <Label>Material Type</Label>
@@ -448,22 +515,74 @@ export default function DataEntry() {
       {/* STEP 4 — Ladder counts per side */}
       {step === STEP.LADDERS && (
         <Section title="Ladder Count per Side">
-          <p className="text-sm text-gray-500 mb-4">Enter how many ladders each side has.</p>
-          <div className="space-y-3">
+          {/* Set All */}
+          <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-100">
+            <span className="text-sm font-medium text-gray-600">Set all sides:</span>
+            <input
+              type="number" min="1" max="99"
+              value={setAllLadderCount}
+              onChange={(e) => setSetAllLadderCount(e.target.value)}
+              className="w-24 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+              placeholder="count"
+            />
+            <button
+              onClick={() => {
+                const n = parseInt(setAllLadderCount, 10);
+                if (n > 0) {
+                  const counts = {};
+                  activeSides.forEach((s) => { counts[s] = String(n); });
+                  setLadderCounts(counts);
+                  setEditingSide(null);
+                }
+              }}
+              className="text-xs px-3 py-1.5 rounded border border-gray-300 bg-white hover:border-green-700 hover:text-green-700 transition-all"
+            >
+              Apply to all sides
+            </button>
+          </div>
+
+          {/* Per-side rows */}
+          <div className="space-y-2">
             {activeSides.map((side) => (
-              <div key={side} className="flex items-center gap-4">
-                <span className="w-8 font-bold text-gray-700">Side {side}</span>
-                <input
-                  type="number" min="1" max="99"
-                  value={ladderCounts[side] || ""}
-                  onChange={(e) => setLadderCounts((p) => ({ ...p, [side]: e.target.value }))}
-                  className="w-24 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
-                  placeholder="e.g. 10"
-                />
-                <span className="text-xs text-gray-400">ladders</span>
+              <div key={side} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                <span className="w-14 text-sm font-medium text-gray-700">Side {side}</span>
+                {editingSide === side ? (
+                  <>
+                    <input
+                      type="number" min="1" max="99"
+                      value={ladderCounts[side] || ""}
+                      onChange={(e) => setLadderCounts((p) => ({ ...p, [side]: e.target.value }))}
+                      className="w-24 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                      autoFocus
+                    />
+                    <span className="text-xs text-gray-400">ladders</span>
+                    <button
+                      onClick={() => setEditingSide(null)}
+                      className="text-xs text-green-700 font-medium hover:text-green-800"
+                    >
+                      Done
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-28 text-sm text-gray-600">
+                      {ladderCounts[side]
+                        ? <>{ladderCounts[side]} <span className="text-gray-400">ladders</span></>
+                        : <span className="text-gray-400 italic">not set</span>
+                      }
+                    </span>
+                    <button
+                      onClick={() => setEditingSide(side)}
+                      className="text-xs px-2 py-1 rounded border border-gray-200 hover:border-green-700 hover:text-green-700 transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </div>
+
           <div className="flex gap-3 mt-6">
             <Back onClick={() => setStep(STEP.SIDES)} />
             <Next onClick={submitLadders} />
@@ -474,75 +593,134 @@ export default function DataEntry() {
       {/* STEP 5 — Shelves per ladder */}
       {step === STEP.SHELVES && (
         <Section title="Shelves per Ladder">
-          <p className="text-sm text-gray-500 mb-4">
-            For each ladder: set the shelf count, generate the rows, then enter widths.
-            Use the batch fill to set all shelves on a ladder at once.
-          </p>
-          <div className="space-y-6">
-            {activeSides.map((side) => {
+          {/* Fill All at top */}
+          <div className="mb-5 pb-4 border-b border-gray-100">
+            <p className="text-sm font-medium text-gray-700 mb-3">Fill All Ladders</p>
+            <div className="flex items-end gap-3 flex-wrap">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1"># Shelves</label>
+                <input
+                  type="number" min="1" max="99"
+                  value={globalShelfCount}
+                  onChange={(e) => setGlobalShelfCount(e.target.value)}
+                  className="w-20 rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                  placeholder="e.g. 8"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Default width (in.) <span className="text-gray-400">(optional)</span></label>
+                <input
+                  type="number" step="0.5" min="0"
+                  value={globalShelfWidth}
+                  onChange={(e) => setGlobalShelfWidth(e.target.value)}
+                  className="w-28 rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                  placeholder="e.g. 35"
+                />
+              </div>
+              <button
+                onClick={applyGlobalFill}
+                className="px-4 py-1.5 text-sm font-medium text-white rounded-lg"
+                style={{ backgroundColor: "#1E4D2B" }}
+              >
+                Apply to all ladders
+              </button>
+            </div>
+          </div>
+
+          {/* Individual ladders (collapsed by default) */}
+          <div className="space-y-2">
+            {activeSides.flatMap((side) => {
               const lc = parseInt(ladderCounts[side], 10);
               return Array.from({ length: lc }, (_, i) => {
                 const lNum = i + 1;
                 const key = `${side}-${lNum}`;
                 const shelves = shelvesData[key] || [];
+                const isExpanded = expandedLadderKeys.has(key);
                 return (
-                  <div key={key} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="font-semibold text-gray-700 mb-3">
-                      Side {side} · Ladder {zeroPad(lNum)}
+                  <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* Summary row */}
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50">
+                      <span className="text-sm font-medium text-gray-700">
+                        Side {side} · Ladder {zeroPad(lNum)}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-400">
+                          {shelves.length > 0 ? `${shelves.length} shelves` : "not set"}
+                        </span>
+                        <button
+                          onClick={() => toggleExpandedLadder(key)}
+                          className="text-xs px-2 py-1 rounded border border-gray-200 hover:border-green-700 hover:text-green-700 transition-colors"
+                        >
+                          {isExpanded ? "Done" : "Edit"}
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <input
-                        type="number" min="1" max="99"
-                        value={shelfCounts[key] || ""}
-                        onChange={(e) => setShelfCounts((p) => ({ ...p, [key]: e.target.value }))}
-                        placeholder="# shelves"
-                        className="w-28 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
-                      />
-                      <button
-                        onClick={() => generateShelves(key)}
-                        className="text-xs px-3 py-1 rounded border border-gray-300 bg-white hover:border-green-700 transition-all"
-                      >
-                        Generate shelves
-                      </button>
-                    </div>
-                    {shelves.length > 0 && (
-                      <>
-                        <div className="flex items-center gap-2 mb-3">
+
+                    {/* Expanded editor */}
+                    {isExpanded && (
+                      <div className="px-4 py-3 bg-white border-t border-gray-100">
+                        {/* Shelf count + generate */}
+                        <div className="flex items-center gap-3 mb-3">
                           <input
-                            type="number" step="0.5" min="0"
-                            value={batchFill[key] || ""}
-                            onChange={(e) => setBatchFill((p) => ({ ...p, [key]: e.target.value }))}
-                            placeholder='Fill all with e.g. "35"'
-                            className="w-44 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                            type="number" min="1" max="99"
+                            value={shelfCounts[key] || ""}
+                            onChange={(e) => setShelfCounts((p) => ({ ...p, [key]: e.target.value }))}
+                            placeholder="# shelves"
+                            className="w-28 rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
                           />
                           <button
-                            onClick={() => applyBatchFill(key)}
+                            onClick={() => generateShelves(key)}
                             className="text-xs px-3 py-1 rounded border border-gray-300 bg-white hover:border-green-700 transition-all"
                           >
-                            Fill ladder
+                            Generate
                           </button>
                         </div>
-                        <div className="grid grid-cols-4 gap-2">
-                          {shelves.map((s, idx) => (
-                            <div key={idx} className="flex flex-col gap-0.5">
-                              <span className="text-xs text-gray-400">Shelf {s.shelf_number}</span>
+
+                        {shelves.length > 0 && (
+                          <>
+                            {/* Batch fill for this ladder */}
+                            <div className="flex items-center gap-2 mb-3 flex-wrap">
+                              <span className="text-xs text-gray-500">Fill all:</span>
                               <input
                                 type="number" step="0.5" min="0"
-                                value={s.width_inches}
-                                onChange={(e) => setShelfWidth(key, idx, e.target.value)}
-                                placeholder="in."
-                                className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-green-700"
+                                value={batchFill[key] || ""}
+                                onChange={(e) => setBatchFill((p) => ({ ...p, [key]: e.target.value }))}
+                                placeholder="Width (in.)"
+                                className="w-28 rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-700"
                               />
+                              <button
+                                onClick={() => applyBatchFill(key)}
+                                className="text-xs px-3 py-1 rounded border border-gray-300 bg-white hover:border-green-700 transition-all"
+                              >
+                                Apply
+                              </button>
                             </div>
-                          ))}
-                        </div>
-                      </>
+
+                            {/* Shelf grid — two inputs per shelf */}
+                            <div className="grid grid-cols-4 gap-2">
+                              {shelves.map((s, idx) => (
+                                <div key={idx} className="flex flex-col gap-1">
+                                  <span className="text-xs text-gray-400"># {s.shelf_number}</span>
+                                  <input
+                                    type="number" step="0.5" min="0"
+                                    value={s.width_inches}
+                                    onChange={(e) => setShelfField(key, idx, "width_inches", e.target.value)}
+                                    placeholder="in."
+                                    className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-700"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
               });
             })}
           </div>
+
           <div className="flex gap-3 mt-6">
             <Back onClick={() => setStep(STEP.LADDERS)} />
             <Next onClick={submitShelves} label="Review" />
@@ -556,7 +734,11 @@ export default function DataEntry() {
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-5 py-4 text-sm space-y-2 mb-6">
             <Row label="Facility"      value={facilityLabel} />
             <Row label="Floor"         value={floor?.display_name} />
-            <Row label="Range"         value={zeroPad(parseInt(rangeNumber, 10))} />
+            <Row label="Range" value={
+              rangeEnd && parseInt(rangeEnd, 10) > parseInt(rangeNumber, 10)
+                ? `${zeroPad(parseInt(rangeNumber, 10))} – ${zeroPad(parseInt(rangeEnd, 10))} (${parseInt(rangeEnd, 10) - parseInt(rangeNumber, 10) + 1} ranges)`
+                : zeroPad(parseInt(rangeNumber, 10))
+            } />
             <Row label="Material type" value={materialType} />
             {selectedLocationCodes.length > 0 && (
               <Row label="Location codes" value={selectedLocationCodes.join(", ")} />
@@ -579,7 +761,7 @@ export default function DataEntry() {
               className="px-5 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50"
               style={{ backgroundColor: "#1E4D2B" }}
             >
-              {saving ? "Saving…" : "Save Range"}
+              {saving ? "Saving…" : (rangeEnd && parseInt(rangeEnd, 10) > parseInt(rangeNumber, 10) ? "Save Ranges" : "Save Range")}
             </button>
           </div>
         </Section>

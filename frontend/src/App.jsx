@@ -16,6 +16,8 @@ import Locations from "./pages/mapping/Locations";
 import MorganInventory from "./pages/MorganInventory";
 import Scanning from "./pages/morgan_inventory/Scanning";
 import ScanSessionDetail from "./pages/morgan_inventory/ScanSessionDetail";
+import MorganSettings from "./pages/morgan_inventory/Settings";
+import RangeEdit from "./pages/mapping/RangeEdit";
 
 export default function App() {
   return (
@@ -30,6 +32,7 @@ export default function App() {
           <Route path="mapping" element={<Mapping />} />
           <Route path="mapping/data-entry" element={<DataEntry />} />
           <Route path="mapping/ranges" element={<RangeList />} />
+          <Route path="mapping/ranges/:id/edit" element={<RangeEdit />} />
           <Route path="mapping/search" element={<MapSearch />} />
           <Route path="mapping/view" element={<ViewMap />} />
           <Route path="mapping/editor" element={<MapEditor />} />
@@ -37,6 +40,7 @@ export default function App() {
           <Route path="morgan" element={<MorganInventory />} />
           <Route path="morgan/scanning" element={<Scanning />} />
           <Route path="morgan/scanning/:id" element={<ScanSessionDetail />} />
+          <Route path="morgan/settings" element={<MorganSettings />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

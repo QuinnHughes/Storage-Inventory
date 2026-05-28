@@ -69,14 +69,16 @@ class Shelf(Base):
     id           = Column(Integer, primary_key=True)
     ladder_id    = Column(Integer, ForeignKey("ladders.id", ondelete="CASCADE"), nullable=False, index=True)
     shelf_number = Column(String(4), nullable=False)    # e.g. "04"
-    width_inches = Column(Numeric(6, 2), nullable=True)  # physical measured width
+    width_inches = Column(Numeric(6, 2), nullable=True)  # total physical shelf width
+    fill_inches  = Column(Numeric(6, 2), nullable=True)  # inches of material on shelf
 
     ladder = relationship("Ladder", back_populates="shelves")
 
 
 __all__ = ["Base", "Floor", "Range", "RangeSide", "Ladder", "Shelf",
            "PieceTemplate", "ShapeGroup", "MapShape",
-           "Collection", "Location", "IlsRecord"]
+           "Collection", "Location", "IlsRecord",
+           "ResolutionOption"]
 
 
 # ── Collections & Locations ──────────────────────────────────────────────────
@@ -263,6 +265,18 @@ class ScanItem(Base):
     discrepancy = relationship("ScanDiscrepancy", back_populates="scan_item", uselist=False)
 
 
+# ── Resolution options (configurable lookup table) ────────────────────────────
+
+class ResolutionOption(Base):
+    """A user-defined outcome label for resolving a discrepancy (e.g. 'Reshelved')."""
+    __tablename__ = "resolution_options"
+
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    sort_order  = Column(Integer, nullable=False, default=0)
+
+
 class ScanDiscrepancy(Base):
     """
     A single discrepancy detected during analysis of a ScanSession.
@@ -277,17 +291,28 @@ class ScanDiscrepancy(Base):
     """
     __tablename__ = "scan_discrepancies"
 
-    id                = Column(Integer, primary_key=True)
-    session_id        = Column(Integer, ForeignKey("scan_sessions.id", ondelete="CASCADE"),
-                               nullable=False, index=True)
-    scan_item_id      = Column(Integer, ForeignKey("scan_items.id",    ondelete="CASCADE"),
-                               nullable=True, index=True)
-    type              = Column(String(50),  nullable=False)
-    severity          = Column(String(20),  nullable=False, default="warning")
+    id                   = Column(Integer, primary_key=True)
+    session_id           = Column(Integer, ForeignKey("scan_sessions.id", ondelete="CASCADE"),
+                                  nullable=False, index=True)
+    scan_item_id         = Column(Integer, ForeignKey("scan_items.id",    ondelete="CASCADE"),
+                                  nullable=True, index=True)
+    type                 = Column(String(50),  nullable=False)
+    severity             = Column(String(20),  nullable=False, default="warning")
     # info | warning | error
-    detail            = Column(Text,        nullable=True)
-    expected_position = Column(Integer,     nullable=True)   # for out_of_order
+    detail               = Column(Text,        nullable=True)
+    expected_position    = Column(Integer,     nullable=True)   # for out_of_order
+    # Resolution tracking
+    resolved_at          = Column(DateTime(timezone=True), nullable=True)
+    resolution_option_id = Column(Integer,
+                                  ForeignKey("resolution_options.id", ondelete="SET NULL"),
+                                  nullable=True, index=True)
+    resolution_notes     = Column(Text, nullable=True)
 
-    session   = relationship("ScanSession",  back_populates="discrepancies")
-    scan_item = relationship("ScanItem",     back_populates="discrepancy")
+    session           = relationship("ScanSession",      back_populates="discrepancies")
+    scan_item         = relationship("ScanItem",         back_populates="discrepancy")
+    resolution_option = relationship("ResolutionOption")
+
+    @property
+    def resolution_option_name(self) -> str | None:
+        return self.resolution_option.name if self.resolution_option else None
 

@@ -76,6 +76,10 @@ export default function ScanSessionDetail() {
   const [analyzeError, setAnalyzeError] = useState(null);
   const [locationCode, setLocationCode] = useState("");
   const [activeTab, setActiveTab] = useState("items"); // items | discrepancies
+  const [resolutionOptions, setResolutionOptions] = useState([]);
+  const [editingDiscId, setEditingDiscId]         = useState(null);
+  const [resolutionForm, setResolutionForm]       = useState({ option_id: "", notes: "" });
+  const [savingResolution, setSavingResolution]   = useState(false);
 
   const inputRef = useRef();
   const fileRef = useRef();
@@ -93,6 +97,11 @@ export default function ScanSessionDetail() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // Load resolution options once
+  useEffect(() => {
+    api.getResolutionOptions().then(setResolutionOptions).catch(() => {});
+  }, []);
+
   // Auto-focus input when in live mode
   useEffect(() => {
     if (inputMode === "live" && session?.status === "scanning") {
@@ -104,6 +113,13 @@ export default function ScanSessionDetail() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.items?.length]);
+
+  // Re-focus barcode input after each add completes (adding goes false → re-render → input enabled)
+  useEffect(() => {
+    if (!adding && inputMode === "live" && session?.status === "scanning") {
+      inputRef.current?.focus();
+    }
+  }, [adding]);
 
   const addBarcode = async (e) => {
     e?.preventDefault();
@@ -171,10 +187,49 @@ export default function ScanSessionDetail() {
     reload();
   };
 
+  const openEdit = (d) => {
+    setResolutionForm({
+      option_id: d.resolution_option_id ? String(d.resolution_option_id) : "",
+      notes:     d.resolution_notes ?? "",
+    });
+    setEditingDiscId(d.id);
+  };
+
+  const saveResolution = async (discId) => {
+    setSavingResolution(true);
+    try {
+      await api.resolveDiscrepancy(id, discId, {
+        option_id: resolutionForm.option_id ? Number(resolutionForm.option_id) : null,
+        notes:     resolutionForm.notes || null,
+      });
+      setEditingDiscId(null);
+      reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingResolution(false);
+    }
+  };
+
+  const clearResolution = async (discId) => {
+    setSavingResolution(true);
+    try {
+      await api.resolveDiscrepancy(id, discId, { option_id: null, notes: null });
+      setEditingDiscId(null);
+      reload();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingResolution(false);
+    }
+  };
+
   if (loading) return <p className="text-sm text-gray-400 py-10">Loading…</p>;
   if (!session) return <p className="text-sm text-red-500 py-10">Session not found.</p>;
 
-  const isScanning = session.status === "scanning";
+  const isScanning   = session.status === "scanning";
+  const canResolve   = session.status === "analyzed" || session.status === "complete";
+  const resolvedCount = (session.discrepancies ?? []).filter(d => d.resolved_at).length;
   const discsByItemId = Object.fromEntries(
     (session.discrepancies ?? []).map(d => [d.scan_item_id, d])
   );
@@ -200,7 +255,7 @@ export default function ScanSessionDetail() {
         <div>
           <button onClick={() => navigate("/morgan/scanning")}
             className="text-xs text-gray-400 hover:text-gray-700 mb-1">
-            ← Back to sessions
+            ← Back to scanning
           </button>
           <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
             {session.location_label || "Scan Session #" + session.id}
@@ -333,22 +388,101 @@ export default function ScanSessionDetail() {
                 <div className="divide-y divide-gray-100 max-h-[60vh] overflow-auto">
                   {session.discrepancies.map(d => {
                     const item = session.items.find(it => it.id === d.scan_item_id);
+                    const isEditing = editingDiscId === d.id;
                     return (
-                      <div key={d.id} className={`px-4 py-3 flex gap-3 items-start ${
+                      <div key={d.id} className={`px-4 py-3 ${
+                        d.resolved_at ? "bg-green-50 opacity-75" :
                         d.severity === "error" ? "bg-red-50" :
                         d.severity === "warning" ? "bg-amber-50" : "bg-blue-50"
                       }`}>
-                        <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${SEV_DOT[d.severity]}`} />
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-gray-700">
-                            {TYPE_LABEL[d.type] ?? d.type}
-                            {item && (
-                              <span className="ml-2 font-mono text-gray-400 font-normal">
-                                pos {item.position} · {item.barcode}
-                              </span>
+                        <div className="flex gap-3 items-start">
+                          <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
+                            d.resolved_at ? "bg-green-500" : SEV_DOT[d.severity]
+                          }`} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-gray-700">
+                              {TYPE_LABEL[d.type] ?? d.type}
+                              {item && (
+                                <span className="ml-2 font-mono text-gray-400 font-normal">
+                                  pos {item.position} · {item.barcode}
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-0.5">{d.detail}</p>
+
+                            {/* Resolved badge */}
+                            {d.resolved_at && !isEditing && (
+                              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                                <span className="text-green-700 text-xs">✓</span>
+                                <span className="text-xs font-medium text-green-700">{d.resolution_option_name}</span>
+                                <span className="text-xs text-gray-400">
+                                  {new Date(d.resolved_at).toLocaleString()}
+                                </span>
+                                {d.resolution_notes && (
+                                  <span className="text-xs text-gray-500 italic">{d.resolution_notes}</span>
+                                )}
+                                {canResolve && (
+                                  <button onClick={() => openEdit(d)}
+                                    className="text-xs text-gray-400 hover:text-gray-700 underline ml-1">
+                                    Edit
+                                  </button>
+                                )}
+                              </div>
                             )}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5">{d.detail}</p>
+
+                            {/* Resolve button (unresolved) */}
+                            {canResolve && !d.resolved_at && !isEditing && (
+                              <button onClick={() => openEdit(d)}
+                                className="mt-1.5 text-xs text-gray-400 hover:text-green-700 transition-colors">
+                                + Resolve
+                              </button>
+                            )}
+
+                            {/* Inline resolution form */}
+                            {isEditing && (
+                              <div className="mt-2 space-y-2 border-t border-gray-200 pt-2">
+                                <select
+                                  value={resolutionForm.option_id}
+                                  onChange={e => setResolutionForm(f => ({ ...f, option_id: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-700"
+                                >
+                                  <option value="">— Select outcome —</option>
+                                  {resolutionOptions.map(opt => (
+                                    <option key={opt.id} value={opt.id}>{opt.name}</option>
+                                  ))}
+                                </select>
+                                <textarea
+                                  rows={2}
+                                  value={resolutionForm.notes}
+                                  onChange={e => setResolutionForm(f => ({ ...f, notes: e.target.value }))}
+                                  placeholder="Notes (optional)…"
+                                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-green-700"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => saveResolution(d.id)}
+                                    disabled={!resolutionForm.option_id || savingResolution}
+                                    className="px-3 py-1 text-xs font-medium text-white rounded-lg disabled:opacity-40"
+                                    style={{ backgroundColor: "#1E4D2B" }}>
+                                    {savingResolution ? "Saving…" : "Save"}
+                                  </button>
+                                  {d.resolved_at && (
+                                    <button
+                                      onClick={() => clearResolution(d.id)}
+                                      disabled={savingResolution}
+                                      className="px-3 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40">
+                                      Clear
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => setEditingDiscId(null)}
+                                    className="px-3 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -415,6 +549,14 @@ export default function ScanSessionDetail() {
                     <span className="font-mono font-medium">{items.length}</span>
                   </div>
                 ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between text-xs">
+                <span className="text-gray-500">Resolved</span>
+                <span className={`font-mono font-medium ${
+                  resolvedCount === session.discrepancy_count ? "text-green-700" : "text-gray-700"
+                }`}>
+                  {resolvedCount} / {session.discrepancy_count}
+                </span>
               </div>
             </div>
           )}

@@ -31,7 +31,7 @@ const cards = [
       "Configure Morgan-specific options: location codes, expected call-number ranges per range/section, and analysis thresholds.",
     to: "/morgan/settings",
     icon: "⚙️",
-    ready: false,
+    ready: true,
   },
 ];
 

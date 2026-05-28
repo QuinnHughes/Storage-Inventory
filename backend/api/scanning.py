@@ -3,6 +3,8 @@ Scanning API — shelf-reading sessions.
 
 Endpoints
 ---------
+GET    /api/scanning/floors/{floor_id}/scan-status  shelf tree with scan stats
+
 POST   /api/scanning/sessions                  create session
 GET    /api/scanning/sessions                  list sessions (paginated)
 GET    /api/scanning/sessions/{id}             full session detail
@@ -23,14 +25,121 @@ from typing import Optional
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import func as sa_func
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from core.analysis import analyze_session as _run_analysis
-from db import models
+from db import crud, models
 from db.session import get_db
 
 router = APIRouter()
+
+
+# ── Location scan-status tree ─────────────────────────────────────────────────
+
+@router.get("/floors/{floor_id}/scan-status")
+def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
+    """Return Range→Side→Ladder→Shelf tree for a floor, each shelf annotated with scan stats."""
+    floor = db.query(models.Floor).filter(models.Floor.id == floor_id).first()
+    if not floor:
+        raise HTTPException(404, "Floor not found")
+
+    ranges = (
+        db.query(models.Range)
+        .options(
+            joinedload(models.Range.sides)
+            .joinedload(models.RangeSide.ladders)
+            .joinedload(models.Ladder.shelves)
+        )
+        .filter(models.Range.floor_id == floor_id)
+        .order_by(models.Range.range_number)
+        .all()
+    )
+
+    shelf_ids = [
+        shelf.id
+        for rng in ranges
+        for side in rng.sides
+        for ladder in side.ladders
+        for shelf in ladder.shelves
+    ]
+
+    stats: dict = {}
+    last_status: dict[int, str] = {}
+    active_session_map: dict[int, int] = {}
+
+    if shelf_ids:
+        stats_rows = (
+            db.query(
+                models.ScanSession.shelf_id,
+                sa_func.count(models.ScanSession.id).label("session_count"),
+                sa_func.max(models.ScanSession.created_at).label("last_scanned_at"),
+            )
+            .filter(models.ScanSession.shelf_id.in_(shelf_ids))
+            .group_by(models.ScanSession.shelf_id)
+            .all()
+        )
+        stats = {row.shelf_id: row for row in stats_rows}
+
+        all_sessions = (
+            db.query(
+                models.ScanSession.shelf_id,
+                models.ScanSession.id,
+                models.ScanSession.status,
+            )
+            .filter(models.ScanSession.shelf_id.in_(shelf_ids))
+            .order_by(models.ScanSession.shelf_id, models.ScanSession.created_at.desc())
+            .all()
+        )
+        seen: set[int] = set()
+        for row in all_sessions:
+            if row.shelf_id not in seen:
+                seen.add(row.shelf_id)
+                last_status[row.shelf_id] = row.status
+            if row.status == "scanning" and row.shelf_id not in active_session_map:
+                active_session_map[row.shelf_id] = row.id
+
+    ranges_out = []
+    for rng in ranges:
+        sides_out = []
+        for side in sorted(rng.sides, key=lambda s: s.side_letter):
+            ladders_out = []
+            for ladder in sorted(side.ladders, key=lambda l: l.ladder_number):
+                shelves_out = []
+                for shelf in sorted(ladder.shelves, key=lambda s: s.shelf_number):
+                    st = stats.get(shelf.id)
+                    shelves_out.append({
+                        "id": shelf.id,
+                        "shelf_number": shelf.shelf_number,
+                        "session_count": st.session_count if st else 0,
+                        "last_scanned_at": st.last_scanned_at.isoformat() if (st and st.last_scanned_at) else None,
+                        "last_status": last_status.get(shelf.id),
+                        "active_session_id": active_session_map.get(shelf.id),
+                    })
+                ladders_out.append({
+                    "id": ladder.id,
+                    "ladder_number": ladder.ladder_number,
+                    "shelves": shelves_out,
+                })
+            sides_out.append({
+                "id": side.id,
+                "side_letter": side.side_letter,
+                "ladders": ladders_out,
+            })
+        ranges_out.append({
+            "id": rng.id,
+            "range_number": rng.range_number,
+            "material_type": rng.material_type,
+            "notes": rng.notes,
+            "sides": sides_out,
+        })
+
+    return {
+        "floor_id": floor.id,
+        "display_name": floor.display_name,
+        "ranges": ranges_out,
+    }
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -49,14 +158,38 @@ class SessionPatch(BaseModel):
 
 
 class DiscrepancyOut(BaseModel):
-    id:                int
-    scan_item_id:      Optional[int]
-    type:              str
-    severity:          str
-    detail:            Optional[str]
-    expected_position: Optional[int]
+    id:                    int
+    scan_item_id:          Optional[int]
+    type:                  str
+    severity:              str
+    detail:                Optional[str]
+    expected_position:     Optional[int]
+    resolved_at:           Optional[datetime]
+    resolution_option_id:  Optional[int]
+    resolution_option_name: Optional[str]
+    resolution_notes:      Optional[str]
 
     model_config = {"from_attributes": True}
+
+
+class ResolutionOptionOut(BaseModel):
+    id:          int
+    name:        str
+    description: Optional[str]
+    sort_order:  int
+
+    model_config = {"from_attributes": True}
+
+
+class ResolutionOptionCreate(BaseModel):
+    name:        str
+    description: Optional[str] = None
+    sort_order:  int = 0
+
+
+class DiscrepancyResolve(BaseModel):
+    option_id: Optional[int] = None
+    notes:     Optional[str] = None
 
 
 class ScanItemOut(BaseModel):
@@ -134,8 +267,10 @@ def _session_or_404(session_id: int, db: Session) -> models.ScanSession:
         db.query(models.ScanSession)
         .options(
             joinedload(models.ScanSession.items)
-            .joinedload(models.ScanItem.discrepancy),
-            joinedload(models.ScanSession.discrepancies),
+            .joinedload(models.ScanItem.discrepancy)
+            .joinedload(models.ScanDiscrepancy.resolution_option),
+            joinedload(models.ScanSession.discrepancies)
+            .joinedload(models.ScanDiscrepancy.resolution_option),
         )
         .filter(models.ScanSession.id == session_id)
         .first()
@@ -149,9 +284,34 @@ def _session_or_404(session_id: int, db: Session) -> models.ScanSession:
 
 @router.post("/sessions", response_model=SessionDetail, status_code=201)
 def create_session(body: SessionCreate, db: Session = Depends(get_db)):
+    location_label = body.location_label
+
+    # Auto-build label from shelf hierarchy when shelf_id is provided
+    if body.shelf_id and not location_label:
+        shelf = (
+            db.query(models.Shelf)
+            .options(
+                joinedload(models.Shelf.ladder)
+                .joinedload(models.Ladder.side)
+                .joinedload(models.RangeSide.range)
+                .joinedload(models.Range.floor)
+            )
+            .filter(models.Shelf.id == body.shelf_id)
+            .first()
+        )
+        if shelf and shelf.ladder and shelf.ladder.side and shelf.ladder.side.range:
+            ladder = shelf.ladder
+            side = ladder.side
+            rng = side.range
+            floor = rng.floor
+            location_label = (
+                f"{floor.display_name} · Range {rng.range_number}{side.side_letter} · "
+                f"Ladder {ladder.ladder_number} · Shelf {shelf.shelf_number}"
+            )
+
     s = models.ScanSession(
         shelf_id=body.shelf_id,
-        location_label=body.location_label,
+        location_label=location_label,
         notes=body.notes,
         status="scanning",
     )
@@ -376,3 +536,36 @@ def analyze(session_id: int, body: AnalyzeBody, db: Session = Depends(get_db)):
 
     s = _session_or_404(session_id, db)
     return {**_to_out(s), "items": s.items, "discrepancies": s.discrepancies}
+
+
+# ── Resolution options ────────────────────────────────────────────────────────
+
+@router.get("/resolution-options", response_model=list[ResolutionOptionOut])
+def list_resolution_options(db: Session = Depends(get_db)):
+    return crud.list_resolution_options(db)
+
+
+@router.post("/resolution-options", response_model=ResolutionOptionOut, status_code=201)
+def create_resolution_option(body: ResolutionOptionCreate, db: Session = Depends(get_db)):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Name must not be empty")
+    return crud.create_resolution_option(db, name, body.description, body.sort_order)
+
+
+@router.delete("/resolution-options/{option_id}", status_code=204)
+def delete_resolution_option(option_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_resolution_option(db, option_id):
+        raise HTTPException(404, "Resolution option not found")
+
+
+# ── Discrepancy resolution ─────────────────────────────────────────────────────
+
+@router.patch("/sessions/{session_id}/discrepancies/{disc_id}", response_model=DiscrepancyOut)
+def resolve_discrepancy(session_id: int, disc_id: int, body: DiscrepancyResolve, db: Session = Depends(get_db)):
+    if not db.query(models.ScanSession).filter(models.ScanSession.id == session_id).first():
+        raise HTTPException(404, "Scan session not found")
+    disc = crud.resolve_discrepancy(db, disc_id, body.option_id, body.notes)
+    if not disc:
+        raise HTTPException(404, "Discrepancy not found")
+    return disc
