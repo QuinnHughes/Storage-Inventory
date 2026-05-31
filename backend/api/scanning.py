@@ -538,6 +538,178 @@ def analyze(session_id: int, body: AnalyzeBody, db: Session = Depends(get_db)):
     return {**_to_out(s), "items": s.items, "discrepancies": s.discrepancies}
 
 
+# ── Morgan Inventory Overview ─────────────────────────────────────────────────
+
+def _make_empty_stats() -> dict:
+    return {
+        "shelves_total":          0,
+        "shelves_done":           0,
+        "coverage_pct":           0.0,
+        "inches_measured":        0.0,
+        "last_inventoried":       None,
+        "discrepancies_total":    0,
+        "discrepancies_resolved": 0,
+        "resolution_pct":         0.0,
+        "by_severity": {"error": 0, "warning": 0, "info": 0},
+        "by_type": {
+            "no_record": 0, "out_of_order": 0, "wrong_location": 0,
+            "status_issue": 0, "fulfillment_note": 0, "deleted_on_shelf": 0,
+        },
+    }
+
+
+@router.get("/morgan-overview")
+def morgan_overview(db: Session = Depends(get_db)):
+    """Aggregate coverage, measurement, and discrepancy stats for all Morgan shelves,
+    broken down by Alma location code."""
+
+    # 1 ─ Physical structure
+    floor_ids = [
+        row[0] for row in
+        db.query(models.Floor.id).filter(models.Floor.facility == "morgan").all()
+    ]
+    if not floor_ids:
+        return {"summary": _make_empty_stats(), "locations": []}
+
+    ranges = (
+        db.query(models.Range)
+        .options(
+            joinedload(models.Range.sides)
+            .joinedload(models.RangeSide.ladders)
+            .joinedload(models.Ladder.shelves)
+        )
+        .filter(models.Range.floor_id.in_(floor_ids))
+        .all()
+    )
+
+    # shelf_id → list of location codes ("__uncategorized__" when none set)
+    shelf_loc_map: dict[int, list[str]] = {}
+    for rng in ranges:
+        raw = rng.location_codes or ""
+        codes = [c.strip() for c in raw.split(",") if c.strip()] or ["__uncategorized__"]
+        for side in rng.sides:
+            for ladder in side.ladders:
+                for shelf in ladder.shelves:
+                    shelf_loc_map[shelf.id] = codes
+
+    all_shelf_ids = list(shelf_loc_map.keys())
+    if not all_shelf_ids:
+        return {"summary": _make_empty_stats(), "locations": []}
+
+    # 2 ─ Sessions + discrepancies (eager-loaded to avoid N+1)
+    sessions = (
+        db.query(models.ScanSession)
+        .filter(models.ScanSession.shelf_id.in_(all_shelf_ids))
+        .options(joinedload(models.ScanSession.discrepancies))
+        .all()
+    )
+
+    # Shelves that have at least one complete session
+    complete_shelf_ids: set[int] = set()
+    for s in sessions:
+        if s.shelf_id and s.status == "complete":
+            complete_shelf_ids.add(s.shelf_id)
+
+    # 3 ─ Known Morgan locations (for display names and tab ordering)
+    morgan_locs = (
+        db.query(models.Location)
+        .join(models.Collection)
+        .filter(models.Collection.name == "Morgan")
+        .order_by(models.Location.code)
+        .all()
+    )
+    loc_display: dict[str, str] = {loc.code: loc.display_name for loc in morgan_locs}
+
+    all_codes_in_ranges: set[str] = set()
+    for codes in shelf_loc_map.values():
+        all_codes_in_ranges.update(codes)
+
+    # 4 ─ Aggregate helper
+    _VALID_TYPES = {
+        "no_record", "out_of_order", "wrong_location",
+        "status_issue", "fulfillment_note", "deleted_on_shelf",
+    }
+
+    def aggregate(target_codes):
+        if target_codes is None:
+            in_scope = set(all_shelf_ids)
+        else:
+            in_scope = {
+                sid for sid, codes in shelf_loc_map.items()
+                if any(c in target_codes for c in codes)
+            }
+
+        shelves_total = len(in_scope)
+        shelves_done  = len(in_scope & complete_shelf_ids)
+        coverage_pct  = round(100 * shelves_done / shelves_total, 1) if shelves_total else 0.0
+
+        inches_total     = 0.0
+        last_inventoried = None
+        disc_total       = 0
+        disc_resolved    = 0
+        by_severity      = {"error": 0, "warning": 0, "info": 0}
+        by_type          = {t: 0 for t in _VALID_TYPES}
+
+        for s in sessions:
+            if not s.shelf_id or s.shelf_id not in in_scope:
+                continue
+            if s.status == "complete" and s.inches_of_material:
+                inches_total += float(s.inches_of_material)
+            if s.analyzed_at and s.status in ("analyzed", "complete"):
+                if last_inventoried is None or s.analyzed_at > last_inventoried:
+                    last_inventoried = s.analyzed_at
+            for d in s.discrepancies:
+                disc_total += 1
+                if d.resolved_at:
+                    disc_resolved += 1
+                sev = d.severity if d.severity in by_severity else "info"
+                by_severity[sev] += 1
+                if d.type in by_type:
+                    by_type[d.type] += 1
+
+        resolution_pct = round(100 * disc_resolved / disc_total, 1) if disc_total else 0.0
+
+        return {
+            "shelves_total":          shelves_total,
+            "shelves_done":           shelves_done,
+            "coverage_pct":           coverage_pct,
+            "inches_measured":        round(inches_total, 2),
+            "last_inventoried":       last_inventoried.isoformat() if last_inventoried else None,
+            "discrepancies_total":    disc_total,
+            "discrepancies_resolved": disc_resolved,
+            "resolution_pct":         resolution_pct,
+            "by_severity":            by_severity,
+            "by_type":                by_type,
+        }
+
+    # 5 ─ Build per-location list
+    known_codes   = [loc.code for loc in morgan_locs]
+    unknown_codes = sorted(
+        c for c in all_codes_in_ranges
+        if c != "__uncategorized__" and c not in loc_display
+    )
+    has_uncategorized = "__uncategorized__" in all_codes_in_ranges
+
+    locations_out = []
+    for code in known_codes + unknown_codes:
+        locations_out.append({
+            "code":         code,
+            "display_name": loc_display.get(code, code),
+            **aggregate({code}),
+        })
+    if has_uncategorized:
+        locations_out.append({
+            "code":         "__uncategorized__",
+            "display_name": "Uncategorized",
+            **aggregate({"__uncategorized__"}),
+        })
+
+    return {
+        "summary":   aggregate(None),
+        "locations": locations_out,
+    }
+
+
 # ── Resolution options ────────────────────────────────────────────────────────
 
 @router.get("/resolution-options", response_model=list[ResolutionOptionOut])

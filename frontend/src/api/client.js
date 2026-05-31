@@ -158,6 +158,9 @@ export const api = {
     request("POST", `/scanning/sessions/${sessionId}/analyze`,
             { location_code: locationCode ?? null }),
 
+  // Scanning – morgan overview
+  getMorganOverview: () => request("GET", "/scanning/morgan-overview"),
+
   // Scanning – resolution options
   getResolutionOptions: () =>
     request("GET", "/scanning/resolution-options"),

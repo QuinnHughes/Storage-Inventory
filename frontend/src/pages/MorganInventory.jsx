@@ -4,26 +4,18 @@ const cards = [
   {
     title: "Shelf Scanning",
     description:
-      "Create and manage shelf-reading sessions. Scan barcodes live or upload a barcode list from Excel/CSV. The analysis engine uses LC call number order to flag misshelfed, missing, or problem items.",
+      "Select shelves by location to scan or upload barcodes to inventory. Then run analysis to find and fix discrepancies.",
     to: "/morgan/scanning",
-    icon: "🔫",
+    icon: "📚",
     ready: true,
   },
   {
-    title: "Analytics",
+    title: "Inventory Overview",
     description:
-      "Statistics and charts derived from completed scan sessions — shelf fill rates, discrepancy trends, and call-number coverage across Morgan's collections.",
-    to: "/morgan/analytics",
+      "Coverage stats, discrepancy analysis, and measurement totals across Morgan's locations — filter by Alma location code to drill into any area.",
+    to: "/morgan/overview",
     icon: "📊",
-    ready: false,
-  },
-  {
-    title: "Reports",
-    description:
-      "Export shelf-reading results as formatted reports for collection review, weeding workflows, or cataloguing follow-up.",
-    to: "/morgan/reports",
-    icon: "📄",
-    ready: false,
+    ready: true,
   },
   {
     title: "Settings",
@@ -44,8 +36,7 @@ export default function MorganInventory() {
         Morgan Inventory
       </h1>
       <p className="text-base text-gray-500 mb-10">
-        Tools for conducting and analysing physical shelf inventories at Morgan Library,
-        powered by normalised LC call numbers.
+        Tools for performing inventories at Morgan Library.
       </p>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

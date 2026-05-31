@@ -17,6 +17,7 @@ import MorganInventory from "./pages/MorganInventory";
 import Scanning from "./pages/morgan_inventory/Scanning";
 import ScanSessionDetail from "./pages/morgan_inventory/ScanSessionDetail";
 import MorganSettings from "./pages/morgan_inventory/Settings";
+import MorganOverview from "./pages/morgan_inventory/Overview";
 import RangeEdit from "./pages/mapping/RangeEdit";
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="morgan" element={<MorganInventory />} />
           <Route path="morgan/scanning" element={<Scanning />} />
           <Route path="morgan/scanning/:id" element={<ScanSessionDetail />} />
+          <Route path="morgan/overview" element={<MorganOverview />} />
           <Route path="morgan/settings" element={<MorganSettings />} />
           <Route path="settings" element={<Settings />} />
         </Route>
