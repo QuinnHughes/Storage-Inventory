@@ -1,23 +1,23 @@
 ﻿/**
- * MapEditor â€” interactive top-down floor plan editor.
+ * MapEditor interactive top-down floor plan editor.
  *
  * Layout:  [Piece Library 220px] | [SVG Canvas flex] | [Properties 260px]
  *
  * Features:
- *  - Savable piece templates (name, category, width Ã— depth in inches)
+ *  - Savable piece templates (name, category, width × depth in inches)
  *  - Place templates onto the canvas with one click
  *  - Drag to move; drag bottom-right handle to resize
  *  - Snap to 10px grid
  *  - Edge snap: while dragging, auto-aligns to adjacent shapes when within 18px
  *  - Shift-click for multi-select
- *  - Group selected pieces â†’ assign to a DB range + choose which end is ladder 01
+ *  - Group selected pieces → assign to a DB range + choose which end is ladder 01
  *  - Grouped shapes move together; shown with a dashed group outline + ladder-01 arrow
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 
-// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//Constants 
 
 const GRID = 10;
 const MIN_W = 20;
@@ -25,7 +25,7 @@ const MIN_H = 16;
 const CANVAS_W = 1400;
 const CANVAS_H = 900;
 const HANDLE = 10;
-const PPI = 2;            // pixels per inch â€” 1" = 2px on canvas
+const PPI = 2;            // pixels per inch 1" = 2px on canvas
 const SNAP_THRESH = 18;   // edge-snap threshold in px
 
 const MAT_FILL = {
@@ -49,7 +49,7 @@ const MAT_STROKE = {
 const DEFAULT_FILL   = "#e5e7eb";
 const DEFAULT_STROKE = "#9ca3af";
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helpers 
 
 const snap = (v) => Math.round(v / GRID) * GRID;
 
@@ -76,8 +76,8 @@ function edgeSnap(x, y, w, h, others, excludeId) {
 
     if (yOverlap) {
       const candidates = [
-        [Math.abs(x - (o.x + o.width)), o.x + o.width],            // my left â†’ their right
-        [Math.abs(x + w - o.x),         o.x - w],                   // my right â†’ their left
+        [Math.abs(x - (o.x + o.width)), o.x + o.width],            // my left → their right
+        [Math.abs(x + w - o.x),         o.x - w],                   // my right → their left
         [Math.abs(x - o.x),             o.x],                        // align left edges
         [Math.abs(x + w - (o.x + o.width)), o.x + o.width - w],     // align right edges
       ];
@@ -106,12 +106,12 @@ function bbox(shapeList) {
   return { x: Math.min(...xs), y: Math.min(...ys), x2: Math.max(...x2), y2: Math.max(...y2) };
 }
 
-// â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//Component 
 
 export default function MapEditor() {
   const navigate = useNavigate();
 
-  // â€” Data â€”
+  //"Data"
   const [floors, setFloors] = useState([]);
   const [selectedFloor, setSelectedFloor] = useState(null);
   const [ranges, setRanges] = useState([]);
@@ -119,7 +119,7 @@ export default function MapEditor() {
   const [groups, setGroups] = useState([]);
   const [templates, setTemplates] = useState([]);
 
-  // â€” UI state â€”
+  //"UI state"
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -141,7 +141,7 @@ export default function MapEditor() {
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
-  // â€” Derived â€”
+  //"Derived"
   const selectedShapes = shapes.filter((s) => selectedIds.has(s.id));
   const isSingle = selectedIds.size === 1;
   const firstSelected = isSingle ? selectedShapes[0] : null;
@@ -161,10 +161,10 @@ export default function MapEditor() {
     : isSingle && !sharedGroup  ? "shape"
     : sharedGroup               ? "group"
     :                             "multi";
-  // â€" Keep refs in sync for keyboard handler â€"
+  //"Keep refs in sync for keyboard handler"
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
-  // â€” Load on mount â€”
+  //"Load on mount"
   useEffect(() => {
     const facility = localStorage.getItem("mappingFacility") || "storage";
     api.getFloors(facility).then((fs) => {
@@ -174,7 +174,7 @@ export default function MapEditor() {
     api.getTemplates().then(setTemplates).catch(() => {});
   }, []);
 
-  // â€” Floor switching â€”
+  //"Floor switching"
   const loadFloor = async (floor) => {
     setSelectedFloor(floor);
     setSelectedIds(new Set());
@@ -200,7 +200,7 @@ export default function MapEditor() {
     height: parseFloat(s.height),
   });
 
-  // â€” Place a template onto the canvas â€”
+  //"Place a template onto the canvas"
   const placeTemplate = async (tpl) => {
     if (!selectedFloor) return;
     const offset = (shapes.length % 12) * GRID * 2;
@@ -222,7 +222,7 @@ export default function MapEditor() {
     } catch (e) { setError(e.message); }
   };
 
-  // â€” Add blank shape â€”
+  //"Add blank shape"
   const addBlankShape = async () => {
     if (!selectedFloor) return;
     const offset = (shapes.length % 12) * GRID * 2;
@@ -235,7 +235,7 @@ export default function MapEditor() {
     } catch (e) { setError(e.message); }
   };
 
-  // â€” Delete selected shapes â€”
+  //"Delete selected shapes"
   const deleteSelected = async () => {
     for (const id of selectedIds) {
       try { await api.deleteShape(id); } catch { /* ignore */ }
@@ -244,7 +244,7 @@ export default function MapEditor() {
     setSelectedIds(new Set());
   };
 
-  // â€” Update a single field on the selected (single) shape â€”
+  //"Update a single field on the selected (single) shape"
   const patchShape = async (field, value) => {
     if (!firstSelected) return;
     const v = value === "" ? null : value;
@@ -255,7 +255,7 @@ export default function MapEditor() {
     finally { setSaving(false); }
   };
 
-  // â€” Create piece template â€”
+  //"Create piece template"
   const saveNewPiece = async () => {
     if (!newPiece?.name || !newPiece?.category) return;
     setPiecesSaving(true);
@@ -273,7 +273,7 @@ export default function MapEditor() {
     finally { setPiecesSaving(false); }
   };
 
-  // â€” Delete piece template â€”
+  //"Delete piece template"
   const deleteTemplate = async (id) => {
     try {
       await api.deleteTemplate(id);
@@ -281,7 +281,7 @@ export default function MapEditor() {
     } catch (e) { setError(e.message); }
   };
 
-  // â€” Create group from selected shapes â€”
+  //"Create group from selected shapes"
   const createGroup = async () => {
     if (selectedIds.size < 1 || !selectedFloor) return;
     setGrouping(true);
@@ -304,7 +304,7 @@ export default function MapEditor() {
     finally { setGrouping(false); }
   };
 
-  // â€” Update group â€”
+  //"Update group"
   const patchGroup = async (field, value) => {
     if (!sharedGroupId) return;
     const patch = { [field]: value === "" ? null : value };
@@ -314,7 +314,7 @@ export default function MapEditor() {
     } catch (e) { setError(e.message); }
   };
 
-  // â€” Ungroup â€”
+  //"Ungroup"
   const ungroupSelected = async () => {
     if (!sharedGroupId) return;
     try {
@@ -324,7 +324,7 @@ export default function MapEditor() {
     } catch (e) { setError(e.message); }
   };
 
-  // â€” SVG pointer math â€”
+  //"SVG pointer math"
   // getScreenCTM accounts for viewBox automatically — no manual pan offset needed.
   const getSVGPoint = useCallback((e) => {
     const svg = svgRef.current;
@@ -380,7 +380,7 @@ export default function MapEditor() {
       return;
     }
 
-    // Move â€" apply grid snap then edge snap (negative coords allowed)
+    //"Move" — apply grid snap then edge snap (negative coords allowed)
     let newX = snap(dragging.origX + dx);
     let newY = snap(dragging.origY + dy);
 
@@ -432,7 +432,7 @@ export default function MapEditor() {
     }
   };
 
-  // â€" Canvas panning â€"
+  //"Canvas panning"
   const startPan = useCallback((e) => {
     e.preventDefault();
     panRef.current = { startX: e.clientX, startY: e.clientY, origX: pan.x, origY: pan.y, moved: false };
@@ -459,7 +459,7 @@ export default function MapEditor() {
     panRef.current = null;
   }, []);
 
-  // â€" Keyboard shortcuts (R rotate, Esc deselect, Del delete) â€"
+  // " Keyboard shortcuts (R rotate, Esc deselect, Del delete)"
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
@@ -492,22 +492,22 @@ export default function MapEditor() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // â€” Group categories â€”
+  //"Group categories"
   const categories = [...new Set(templates.map((t) => t.category))].sort();
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //"Three-panel body"
   return (
     <div className="flex flex-col" style={{ height: "calc(100vh - 4rem)" }}>
 
-      {/* â”€â”€ Top bar â”€â”€ */}
+      {/* Top bar */}
       <div className="flex items-center justify-between mb-3 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate("/mapping")} className="text-sm text-gray-400 hover:text-gray-600">
-            â† Mapping
+            ← Mapping
           </button>
           <span className="text-gray-300">/</span>
           <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>Map Editor</h1>
-          {saving && <span className="text-xs text-gray-400 ml-1">Savingâ€¦</span>}
+          {saving && <span className="text-xs text-gray-400 ml-1">Saving</span>}
         </div>
         <div className="flex items-center gap-2">
           {floors.map((f) => (
@@ -525,10 +525,10 @@ export default function MapEditor() {
 
       {error && <p className="mb-2 text-sm text-red-600 bg-red-50 rounded px-3 py-2 shrink-0">{error}</p>}
 
-      {/* â”€â”€ Three-panel body â”€â”€ */}
+      {/* Three-panel body */}
       <div className="flex gap-3 flex-1 min-h-0">
 
-        {/* â”€â”€ Left: Piece Library â”€â”€ */}
+        {/* Left: Piece Library */}
         <div className="w-52 shrink-0 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
           <div className="px-4 pt-4 pb-2 border-b border-gray-100 shrink-0">
             <div className="flex items-center justify-between">
@@ -573,7 +573,7 @@ export default function MapEditor() {
                 <button onClick={saveNewPiece} disabled={piecesSaving}
                   className="flex-1 text-xs font-semibold py-1 rounded text-white disabled:opacity-50"
                   style={{ backgroundColor: "#1E4D2B" }}>
-                  {piecesSaving ? "â€¦" : "Save"}
+                  {piecesSaving ? "..." : "Save"}
                 </button>
                 <button onClick={() => setNewPiece(null)}
                   className="flex-1 text-xs py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
@@ -624,11 +624,11 @@ export default function MapEditor() {
           </div>
         </div>
 
-        {/* â”€â”€ Center: Canvas â”€â”€ */}
+        {/* Center: Canvas */}
         <div className="flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm min-h-0"
           style={{ cursor: isPanning ? "grabbing" : "default" }}>
           {loading ? (
-            <div className="flex items-center justify-center h-64 text-gray-400 text-sm">Loadingâ€¦</div>
+            <div className="flex items-center justify-center h-64 text-gray-400 text-sm">Loading...</div>
           ) : (
             <svg ref={svgRef} width="100%" height="100%"
               viewBox={`${pan.x} ${pan.y} ${CANVAS_W} ${CANVAS_H}`}
@@ -680,7 +680,7 @@ export default function MapEditor() {
                     {groupRange && (
                       <text x={lx + 5} y={ly - 5} fontSize={11} fill={isSelected ? "#1E4D2B" : "#6b7280"}
                         fontWeight="600" style={{ pointerEvents: "none", userSelect: "none" }}>
-                        {groupRange.range_number} {g.ladder01_end ? `(L01 â†’${g.ladder01_end})` : ""}
+                        {groupRange.range_number} {g.ladder01_end ? `(L01 →${g.ladder01_end})` : ""}
                       </text>
                     )}
                     {arrowPath && (
@@ -726,23 +726,23 @@ export default function MapEditor() {
           )}
         </div>
 
-        {/* â”€â”€ Right: Properties Panel â”€â”€ */}
+        {/*  Right: Properties Panel  */}
         {rightPanelMode !== "none" && (
           <div className="w-64 shrink-0 bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-4 self-start overflow-y-auto" style={{ maxHeight: "100%" }}>
 
-            {/* â”€â”€ Single shape panel â”€â”€ */}
+            {/* Single shape panel */}
             {rightPanelMode === "shape" && firstSelected && (
               <>
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-gray-800 text-sm">Shape</span>
                   <span className="text-xs text-gray-400">
-                    {parseFloat(firstSelected.width / PPI).toFixed(1)}" Ã— {parseFloat(firstSelected.height / PPI).toFixed(1)}"
+                    {parseFloat(firstSelected.width / PPI).toFixed(1)}"  {parseFloat(firstSelected.height / PPI).toFixed(1)}"
                   </span>
                 </div>
 
                 {firstSelected.template_id && (
                   <div className="text-xs text-gray-500 bg-gray-50 rounded px-2 py-1.5">
-                    Template: <span className="font-medium">{templates.find((t) => t.id === firstSelected.template_id)?.name || "â€”"}</span>
+                    Template: <span className="font-medium">{templates.find((t) => t.id === firstSelected.template_id)?.name || "—"}</span>
                   </div>
                 )}
 
@@ -751,7 +751,7 @@ export default function MapEditor() {
                   <select value={firstSelected.range_id || ""}
                     onChange={(e) => patchShape("range_id", e.target.value ? parseInt(e.target.value) : null)}
                     className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700">
-                    <option value="">â€” unlinked â€”</option>
+                    <option value="">-- unlinked --</option>
                     {ranges.map((r) => <option key={r.id} value={r.id}>Range {r.range_number}{r.material_type ? ` (${r.material_type})` : ""}</option>)}
                   </select>
                 </div>
@@ -799,7 +799,7 @@ export default function MapEditor() {
               </>
             )}
 
-            {/* â”€â”€ Multi-select â†’ group creation â”€â”€ */}
+            {/* Multi-select → group creation */}
             {rightPanelMode === "multi" && (
               <>
                 <div className="font-semibold text-gray-800 text-sm">{selectedIds.size} shapes selected</div>
@@ -810,7 +810,7 @@ export default function MapEditor() {
                   <select value={groupForm.range_id}
                     onChange={(e) => setGroupForm((f) => ({ ...f, range_id: e.target.value }))}
                     className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700">
-                    <option value="">â€” unlinked â€”</option>
+                    <option value="">-- unlinked --</option>
                     {ranges.map((r) => <option key={r.id} value={r.id}>Range {r.range_number}{r.material_type ? ` (${r.material_type})` : ""}</option>)}
                   </select>
                 </div>
@@ -837,7 +837,7 @@ export default function MapEditor() {
                 <button onClick={createGroup} disabled={grouping}
                   className="w-full py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
                   style={{ backgroundColor: "#1E4D2B" }}>
-                  {grouping ? "Groupingâ€¦" : "Group as Range"}
+                  {grouping ? "Grouping..." : "Group as Range"}
                 </button>
 
                 <button onClick={deleteSelected}
@@ -847,7 +847,7 @@ export default function MapEditor() {
               </>
             )}
 
-            {/* â”€â”€ Existing group panel â”€â”€ */}
+            {/* Existing group panel */}
             {rightPanelMode === "group" && sharedGroup && (
               <>
                 <div className="font-semibold text-gray-800 text-sm">Group</div>
@@ -857,7 +857,7 @@ export default function MapEditor() {
                   <select value={sharedGroup.range_id || ""}
                     onChange={(e) => patchGroup("range_id", e.target.value ? parseInt(e.target.value) : null)}
                     className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-700">
-                    <option value="">â€” unlinked â€”</option>
+                    <option value="">-- unlinked --</option>
                     {ranges.map((r) => <option key={r.id} value={r.id}>Range {r.range_number}{r.material_type ? ` (${r.material_type})` : ""}</option>)}
                   </select>
                 </div>
@@ -900,7 +900,7 @@ export default function MapEditor() {
         )}
       </div>
 
-      {/* â”€â”€ Legend â”€â”€ */}
+      {/* Legend */}
       <div className="mt-3 flex flex-wrap items-center gap-3 shrink-0">
         {Object.entries(MAT_FILL).map(([type, color]) => (
           <div key={type} className="flex items-center gap-1.5 text-xs text-gray-600">

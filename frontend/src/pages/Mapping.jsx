@@ -60,7 +60,9 @@ export default function Mapping() {
     localStorage.setItem(FACILITY_KEY, f);
   };
 
-  const cards = facility === "morgan" ? [...BASE_CARDS, LOCATIONS_CARD] : BASE_CARDS;
+  const cards = facility === "morgan"
+    ? [...BASE_CARDS.filter((c) => c.title !== "Search"), LOCATIONS_CARD]
+    : BASE_CARDS;
 
   return (
     <div>
