@@ -300,8 +300,8 @@ def bulk_update_shapes(body: list[MapShapeBulkUpdate], db: Session = Depends(get
 # ── Piece Templates ───────────────────────────────────────────────────────────
 
 @router.get("/piece-templates", response_model=list[PieceTemplateOut])
-def get_piece_templates(db: Session = Depends(get_db)):
-    return crud.list_piece_templates(db)
+def get_piece_templates(facility: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    return crud.list_piece_templates(db, facility=facility)
 
 
 @router.post("/piece-templates", response_model=PieceTemplateOut, status_code=201)

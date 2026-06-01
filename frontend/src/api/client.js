@@ -61,7 +61,7 @@ export const api = {
   bulkUpdateShapes: (updates) => request("POST", "/mapping/shapes/bulk-update", updates),
 
   // Mapping — piece templates
-  getTemplates: () => request("GET", "/mapping/piece-templates"),
+  getTemplates: (facility) => request("GET", facility ? `/mapping/piece-templates?facility=${facility}` : "/mapping/piece-templates"),
   createTemplate: (data) => request("POST", "/mapping/piece-templates", data),
   deleteTemplate: (id) => request("DELETE", `/mapping/piece-templates/${id}`),
 

@@ -96,6 +96,22 @@ function edgeSnap(x, y, w, h, others, excludeId) {
   return { x: bestX !== null ? bestX : x, y: bestY !== null ? bestY : y };
 }
 
+/**
+ * Returns true when shape a is flush against (or within 2px of) shape b on any edge,
+ * with overlap in the perpendicular axis. Used to detect edge-snapped neighbors.
+ */
+function isTouching(a, b) {
+  const T = 1;
+  const xOverlap = a.x + a.width > b.x + T && a.x < b.x + b.width - T;
+  const yOverlap = a.y + a.height > b.y + T && a.y < b.y + b.height - T;
+  const leftFlush  = Math.abs(a.x - (b.x + b.width)) <= T;
+  const rightFlush = Math.abs(a.x + a.width - b.x)   <= T;
+  const topFlush   = Math.abs(a.y - (b.y + b.height)) <= T;
+  const botFlush   = Math.abs(a.y + a.height - b.y)   <= T;
+  return (leftFlush && yOverlap) || (rightFlush && yOverlap) ||
+         (topFlush  && xOverlap) || (botFlush   && xOverlap);
+}
+
 /** Bounding box for an array of shapes. */
 function bbox(shapeList) {
   if (!shapeList.length) return null;
@@ -120,15 +136,19 @@ export default function MapEditor() {
   const [templates, setTemplates] = useState([]);
 
   //"UI state"
+  const [facility] = useState(() => localStorage.getItem("mappingFacility") || "storage");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());   // multi-select
   const [dragging, setDragging] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // New piece template form (null = hidden)
   const [newPiece, setNewPiece] = useState(null);
   const [piecesSaving, setPiecesSaving] = useState(false);
+
+  const dragTemplateRef = useRef(null);
 
   // Group-creation form state (shown in right panel)
   const [groupForm, setGroupForm] = useState({ range_id: "", ladder01_end: "left", label: "" });
@@ -166,13 +186,12 @@ export default function MapEditor() {
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
   //"Load on mount"
   useEffect(() => {
-    const facility = localStorage.getItem("mappingFacility") || "storage";
     api.getFloors(facility).then((fs) => {
       setFloors(fs);
       if (fs.length > 0) loadFloor(fs[0]);
     }).catch(() => setError("Could not load floors."));
-    api.getTemplates().then(setTemplates).catch(() => {});
-  }, []);
+    api.getTemplates(facility).then(setTemplates).catch(() => {});
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   //"Floor switching"
   const loadFloor = async (floor) => {
@@ -200,17 +219,19 @@ export default function MapEditor() {
     height: parseFloat(s.height),
   });
 
-  //"Place a template onto the canvas"
-  const placeTemplate = async (tpl) => {
+  //"Place a template onto the canvas (optionally at a specific SVG coordinate)"
+  const placeTemplate = async (tpl, atX, atY) => {
     if (!selectedFloor) return;
+    const w = snap(parseFloat(tpl.width_inches) * PPI);
+    const h = snap(parseFloat(tpl.depth_inches) * PPI);
     const offset = (shapes.length % 12) * GRID * 2;
     const newShape = {
       template_id: tpl.id,
       label:  null,
-      x:      40 + offset,
-      y:      40 + offset,
-      width:  snap(parseFloat(tpl.width_inches) * PPI),
-      height: snap(parseFloat(tpl.depth_inches) * PPI),
+      x:      atX !== undefined ? snap(atX - w / 2) : 40 + offset,
+      y:      atY !== undefined ? snap(atY - h / 2) : 40 + offset,
+      width:  w,
+      height: h,
       color:  tpl.color || null,
       rotation: 0,
     };
@@ -220,6 +241,32 @@ export default function MapEditor() {
       setShapes((prev) => [...prev, norm]);
       setSelectedIds(new Set([norm.id]));
     } catch (e) { setError(e.message); }
+  };
+
+  //"Drag-from-library handlers"
+  const onTemplateDragStart = (e, tpl) => {
+    dragTemplateRef.current = tpl;
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  const onCanvasDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  };
+
+  const onCanvasDragLeave = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setIsDragOver(false);
+  };
+
+  const onCanvasDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const tpl = dragTemplateRef.current;
+    dragTemplateRef.current = null;
+    if (!tpl || !selectedFloor) return;
+    const pt = getSVGPoint(e);
+    placeTemplate(tpl, pt.x, pt.y);
   };
 
   //"Add blank shape"
@@ -266,6 +313,7 @@ export default function MapEditor() {
         width_inches: parseFloat(newPiece.width_inches) || 35,
         depth_inches: parseFloat(newPiece.depth_inches) || 24,
         color:        newPiece.color || null,
+        facility:     facility,
       });
       setTemplates((prev) => [...prev, saved]);
       setNewPiece(null);
@@ -422,6 +470,30 @@ export default function MapEditor() {
         const s = shapes.find((sh) => sh.id === dragging.id);
         if (s) await api.updateShape(s.id, { width: s.width, height: s.height });
       }
+
+      // ── Auto-assign range / group from a touching neighbor ──────────────────
+      // Only when moving a single free (unassigned) shape onto an assigned one.
+      if (dragging.mode === "move" && !dragging.groupMembers) {
+        const droppedShape = shapes.find((s) => s.id === dragging.id);
+        if (droppedShape && !droppedShape.range_id && !droppedShape.group_id) {
+          const others = shapes.filter((s) => s.id !== dragging.id);
+          const neighbor = others.find((s) => isTouching(droppedShape, s) && (s.range_id || s.group_id));
+          if (neighbor) {
+            const patch = {};
+            if (neighbor.range_id) patch.range_id = neighbor.range_id;
+            if (neighbor.group_id) {
+              // Add the dropped shape into the neighbor's group
+              await api.assignShapesToGroup(neighbor.group_id, [droppedShape.id]);
+              patch.group_id = neighbor.group_id;
+            }
+            if (Object.keys(patch).length) {
+              if (patch.range_id) await api.updateShape(droppedShape.id, { range_id: patch.range_id });
+              setShapes((prev) => prev.map((s) => s.id === droppedShape.id ? { ...s, ...patch } : s));
+            }
+          }
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────────
     } catch (err) { setError(err.message); }
     finally { setSaving(false); }
   }, [dragging, shapes]);
@@ -593,15 +665,17 @@ export default function MapEditor() {
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-1">{cat}</div>
                 {templates.filter((t) => t.category === cat).map((tpl) => (
                   <div key={tpl.id}
-                    className="group flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-gray-50 cursor-pointer"
-                    title={`${tpl.width_inches}" Ã— ${tpl.depth_inches}"`}
+                    draggable
+                    onDragStart={(e) => onTemplateDragStart(e, tpl)}
+                    className="group flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-gray-50 cursor-grab"
+                    title={`${tpl.width_inches}" × ${tpl.depth_inches}" — drag to canvas or click +`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-3 h-3 rounded-sm border shrink-0"
                         style={{ backgroundColor: tpl.color || DEFAULT_FILL, borderColor: tpl.color || DEFAULT_STROKE }} />
                       <div className="min-w-0">
                         <div className="text-xs font-medium text-gray-700 truncate">{tpl.name}</div>
-                        <div className="text-xs text-gray-400">{tpl.width_inches}"Ã—{tpl.depth_inches}"</div>
+                        <div className="text-xs text-gray-400">{tpl.width_inches}"×{tpl.depth_inches}"</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
@@ -610,7 +684,7 @@ export default function MapEditor() {
                         title="Place on canvas">+</button>
                       <button onClick={() => deleteTemplate(tpl.id)}
                         className="text-xs px-1.5 py-0.5 rounded text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400"
-                        title="Delete template">Ã—</button>
+                        title="Delete template">×</button>
                     </div>
                   </div>
                 ))}
@@ -621,12 +695,16 @@ export default function MapEditor() {
           {/* Scale indicator */}
           <div className="px-3 py-2 border-t border-gray-100 shrink-0">
             <div className="text-xs text-gray-400">Scale: 1" = {PPI}px</div>
+            <div className="text-xs text-gray-400 mt-0.5">Drag piece onto canvas to place</div>
           </div>
         </div>
 
         {/* Center: Canvas */}
-        <div className="flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm min-h-0"
-          style={{ cursor: isPanning ? "grabbing" : "default" }}>
+        <div className="flex-1 overflow-hidden rounded-xl border bg-white shadow-sm min-h-0"
+          style={{ cursor: isPanning ? "grabbing" : "default", borderColor: isDragOver ? "#1E4D2B" : "#e5e7eb", borderWidth: isDragOver ? 2 : 1 }}
+          onDragOver={onCanvasDragOver}
+          onDragLeave={onCanvasDragLeave}
+          onDrop={onCanvasDrop}>
           {loading ? (
             <div className="flex items-center justify-center h-64 text-gray-400 text-sm">Loading...</div>
           ) : (
@@ -651,6 +729,13 @@ export default function MapEditor() {
                 onPointerMove={onBgMove}
                 onPointerUp={endPan}
               />
+
+              {/* Drag-over hint overlay */}
+              {isDragOver && (
+                <rect x={pan.x} y={pan.y} width={CANVAS_W} height={CANVAS_H}
+                  fill="#1E4D2B" fillOpacity="0.05" rx={8}
+                  style={{ pointerEvents: "none" }} />
+              )}
 
               {/* Group outlines (dashed bounding boxes) */}
               {groups.map((g) => {

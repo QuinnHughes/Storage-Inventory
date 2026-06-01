@@ -254,6 +254,7 @@ class PieceTemplateCreate(BaseModel):
     width_inches: Decimal = Decimal("35")
     depth_inches: Decimal = Decimal("24")
     color: Optional[str] = None
+    facility: Optional[str] = None  # "storage" | "morgan" | None = shared
 
 
 class PieceTemplateOut(BaseModel):
@@ -263,6 +264,7 @@ class PieceTemplateOut(BaseModel):
     width_inches: Decimal
     depth_inches: Decimal
     color: Optional[str]
+    facility: Optional[str]
 
     model_config = {"from_attributes": True}
 

@@ -159,6 +159,7 @@ class PieceTemplate(Base):
     width_inches = Column(Numeric(8, 2), nullable=False, default=35)  # physical shelf width
     depth_inches = Column(Numeric(8, 2), nullable=False, default=24)  # range depth (front-to-back)
     color        = Column(String(7), nullable=True)                   # hex override or None
+    facility     = Column(String(20), nullable=True)                  # "storage" | "morgan" | None = both
 
 
 # ── Shape groups (pieces grouped into one logical range) ─────────────────────

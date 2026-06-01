@@ -244,8 +244,13 @@ def bulk_update_map_shapes(db: Session, updates: list[dict]) -> None:
 
 # ── Piece Templates ────────────────────────────────────────────────────────────
 
-def list_piece_templates(db: Session) -> list[models.PieceTemplate]:
-    return db.query(models.PieceTemplate).order_by(models.PieceTemplate.category, models.PieceTemplate.name).all()
+def list_piece_templates(db: Session, facility: Optional[str] = None) -> list[models.PieceTemplate]:
+    q = db.query(models.PieceTemplate)
+    if facility:
+        q = q.filter(
+            (models.PieceTemplate.facility == facility) | (models.PieceTemplate.facility == None)  # noqa: E711
+        )
+    return q.order_by(models.PieceTemplate.category, models.PieceTemplate.name).all()
 
 
 def create_piece_template(db: Session, data: dict) -> models.PieceTemplate:
