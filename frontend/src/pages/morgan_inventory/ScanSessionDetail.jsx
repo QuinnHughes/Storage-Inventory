@@ -80,6 +80,7 @@ export default function ScanSessionDetail() {
   const [editingDiscId, setEditingDiscId]         = useState(null);
   const [resolutionForm, setResolutionForm]       = useState({ option_id: "", notes: "" });
   const [savingResolution, setSavingResolution]   = useState(false);
+  const [rescanning, setRescanning]               = useState(false);
 
   const inputRef = useRef();
   const fileRef = useRef();
@@ -187,6 +188,17 @@ export default function ScanSessionDetail() {
     reload();
   };
 
+  const rescanShelf = async () => {
+    setRescanning(true);
+    try {
+      const newSession = await api.createSession({ shelf_id: session.shelf_id });
+      navigate(`/morgan/scanning/${newSession.id}`);
+    } catch (e) {
+      alert(e.message);
+      setRescanning(false);
+    }
+  };
+
   const openEdit = (d) => {
     setResolutionForm({
       option_id: d.resolution_option_id ? String(d.resolution_option_id) : "",
@@ -266,13 +278,21 @@ export default function ScanSessionDetail() {
             <span className="capitalize">{session.status}</span>
           </p>
         </div>
-        {session.status === "analyzed" && (
-          <button onClick={markComplete}
-            className="px-4 py-2 text-sm font-medium text-white rounded-lg"
-            style={{ backgroundColor: "#1E4D2B" }}>
-            Mark Complete
-          </button>
-        )}
+        <div className="flex gap-2 flex-wrap justify-end">
+          {!isScanning && session.shelf_id != null && (
+            <button onClick={rescanShelf} disabled={rescanning}
+              className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-40">
+              {rescanning ? "Starting…" : "Rescan Shelf"}
+            </button>
+          )}
+          {session.status === "analyzed" && (
+            <button onClick={markComplete}
+              className="px-4 py-2 text-sm font-medium text-white rounded-lg"
+              style={{ backgroundColor: "#1E4D2B" }}>
+              Mark Complete
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

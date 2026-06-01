@@ -50,6 +50,7 @@ export default function Scanning() {
   const [loadingTree, setLoadingTree] = useState(false);
   const [expandedRanges, setExpandedRanges] = useState(new Set());
   const [creating, setCreating] = useState(null); // shelf.id currently being created
+  const [rescanModal, setRescanModal] = useState(null); // shelf object awaiting rescan decision
 
   // Load morgan floors on mount
   useEffect(() => {
@@ -87,6 +88,22 @@ export default function Scanning() {
       navigate(`/morgan/scanning/${shelf.active_session_id}`);
       return;
     }
+    if (shelf.last_session_id) {
+      setRescanModal(shelf);
+      return;
+    }
+    setCreating(shelf.id);
+    try {
+      const session = await api.createSession({ shelf_id: shelf.id });
+      navigate(`/morgan/scanning/${session.id}`);
+    } catch (e) {
+      alert(e.message);
+      setCreating(null);
+    }
+  };
+
+  const handleRescan = async (shelf) => {
+    setRescanModal(null);
     setCreating(shelf.id);
     try {
       const session = await api.createSession({ shelf_id: shelf.id });
@@ -263,6 +280,40 @@ export default function Scanning() {
                   Complete
                 </span>
               </div>
+
+              {/* ── Rescan modal ── */}
+              {rescanModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                  onClick={() => setRescanModal(null)}>
+                  <div className="bg-white rounded-2xl shadow-xl p-6 w-80 space-y-4"
+                    onClick={e => e.stopPropagation()}>
+                    <h2 className="text-base font-semibold text-gray-800">
+                      Shelf already scanned
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      This shelf has a previous scan on record. What would you like to do?
+                    </p>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => { setRescanModal(null); navigate(`/morgan/scanning/${rescanModal.last_session_id}`); }}
+                        className="w-full py-2.5 text-sm font-medium text-white rounded-lg"
+                        style={{ backgroundColor: "#1E4D2B" }}>
+                        View Last Scan
+                      </button>
+                      <button
+                        onClick={() => handleRescan(rescanModal)}
+                        className="w-full py-2.5 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        Rescan Shelf
+                      </button>
+                      <button
+                        onClick={() => setRescanModal(null)}
+                        className="w-full py-2.5 text-sm text-gray-400 hover:text-gray-700">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </>

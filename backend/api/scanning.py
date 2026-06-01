@@ -92,11 +92,13 @@ def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
             .order_by(models.ScanSession.shelf_id, models.ScanSession.created_at.desc())
             .all()
         )
+        last_session_map: dict[int, int] = {}
         seen: set[int] = set()
         for row in all_sessions:
             if row.shelf_id not in seen:
                 seen.add(row.shelf_id)
                 last_status[row.shelf_id] = row.status
+                last_session_map[row.shelf_id] = row.id
             if row.status == "scanning" and row.shelf_id not in active_session_map:
                 active_session_map[row.shelf_id] = row.id
 
@@ -116,6 +118,7 @@ def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
                         "last_scanned_at": st.last_scanned_at.isoformat() if (st and st.last_scanned_at) else None,
                         "last_status": last_status.get(shelf.id),
                         "active_session_id": active_session_map.get(shelf.id),
+                        "last_session_id": last_session_map.get(shelf.id),
                     })
                 ladders_out.append({
                     "id": ladder.id,
