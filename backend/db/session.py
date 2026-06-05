@@ -15,7 +15,15 @@ def _get_engine():
     if url is None:
         return None
     if _engine is None or str(_engine.url) != url:
-        _engine = create_engine(url, pool_pre_ping=True)
+        if _engine is not None:
+            _engine.dispose()
+        _engine = create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=3,
+            max_overflow=5,
+            pool_recycle=1800,
+        )
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
     return _engine
 

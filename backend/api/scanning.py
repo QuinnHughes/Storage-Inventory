@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from core.analysis import analyze_session as _run_analysis
+from core.callnumber import normalize_storage
 from db import crud, models
 from db.session import get_db
 
@@ -239,8 +240,28 @@ class SessionsPage(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _resolve_item(item: models.ScanItem, db: Session) -> None:
-    """Look up the ILS record for item.barcode and cache fields on item."""
+def _get_session_facility(session_id: int, db: Session) -> str:
+    """Return 'storage' or 'morgan' for a session by tracing its shelf → floor."""
+    facility = (
+        db.query(models.Floor.facility)
+        .join(models.Range,     models.Range.floor_id       == models.Floor.id)
+        .join(models.RangeSide, models.RangeSide.range_id   == models.Range.id)
+        .join(models.Ladder,    models.Ladder.range_side_id == models.RangeSide.id)
+        .join(models.Shelf,     models.Shelf.ladder_id      == models.Ladder.id)
+        .join(models.ScanSession, models.ScanSession.shelf_id == models.Shelf.id)
+        .filter(models.ScanSession.id == session_id)
+        .scalar()
+    )
+    return facility or "morgan"
+
+
+def _resolve_item(item: models.ScanItem, db: Session, facility: str = "morgan") -> None:
+    """Look up the ILS record for item.barcode and cache fields on item.
+
+    For storage sessions the storage call number lives in item_call_number
+    (the S-{floor}-{range}-{ladder}-{shelf}-{item} field from Alma), so we
+    use that instead of the LC call_number.
+    """
     rec = (
         db.query(models.IlsRecord)
         .filter(models.IlsRecord.barcode == item.barcode.strip().upper())
@@ -248,13 +269,19 @@ def _resolve_item(item: models.ScanItem, db: Session) -> None:
     )
     if rec:
         item.ils_record_id    = rec.id
-        item.call_number      = rec.call_number
-        item.call_number_norm = rec.call_number_norm
         item.title            = rec.title
         item.status           = rec.status
         item.lifecycle        = rec.lifecycle
         item.location_code    = rec.location_code
         item.fulfillment_note = rec.fulfillment_note
+        if facility == "storage":
+            item.call_number      = rec.item_call_number
+            item.call_number_norm = (
+                normalize_storage(rec.item_call_number) if rec.item_call_number else None
+            )
+        else:
+            item.call_number      = rec.call_number
+            item.call_number_norm = rec.call_number_norm
 
 
 def _to_out(s: models.ScanSession) -> dict:
@@ -397,6 +424,8 @@ def add_item(session_id: int, body: AddItemBody, db: Session = Depends(get_db)):
     if not barcode:
         raise HTTPException(400, "Barcode must not be empty")
 
+    facility = _get_session_facility(session_id, db)
+
     # Next position
     last = (
         db.query(models.ScanItem)
@@ -407,7 +436,7 @@ def add_item(session_id: int, body: AddItemBody, db: Session = Depends(get_db)):
     position = (last.position + 1) if last else 1
 
     item = models.ScanItem(session_id=session_id, position=position, barcode=barcode)
-    _resolve_item(item, db)
+    _resolve_item(item, db, facility=facility)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -497,9 +526,11 @@ async def upload_barcodes(
     # Clear any existing items for this session (replace mode)
     db.query(models.ScanItem).filter(models.ScanItem.session_id == session_id).delete()
 
+    facility = _get_session_facility(session_id, db)
+
     for pos, barcode in enumerate(barcodes, start=1):
         item = models.ScanItem(session_id=session_id, position=pos, barcode=barcode)
-        _resolve_item(item, db)
+        _resolve_item(item, db, facility=facility)
         db.add(item)
 
     db.commit()
@@ -524,16 +555,79 @@ def analyze(session_id: int, body: AnalyzeBody, db: Session = Depends(get_db)):
     ).delete()
     db.flush()
 
+    # Auto-detect facility so storage sessions use the storage call number
+    facility         = _get_session_facility(session_id, db)
+    call_number_type = "storage" if facility == "storage" else "lc"
+
     # Re-resolve ILS records in case data changed since scan
     for item in s.items:
-        _resolve_item(item, db)
+        _resolve_item(item, db, facility=facility)
     db.flush()
 
-    discs = _run_analysis(s, location_code=body.location_code)
+    discs = _run_analysis(s, location_code=body.location_code,
+                          call_number_type=call_number_type)
     for d in discs:
         db.add(d)
 
-    s.status      = "analyzed"
+    # ── Not-on-shelf detection (storage only) ─────────────────────────────────
+    # Find ILS records that should be on this shelf (by item_call_number prefix)
+    # but whose barcode was never scanned in this session.
+    if facility == "storage" and s.shelf_id:
+        shelf_obj = (
+            db.query(models.Shelf)
+            .options(
+                joinedload(models.Shelf.ladder)
+                .joinedload(models.Ladder.side)
+                .joinedload(models.RangeSide.range)
+                .joinedload(models.Range.floor)
+            )
+            .filter(models.Shelf.id == s.shelf_id)
+            .first()
+        )
+        if (
+            shelf_obj and shelf_obj.ladder and shelf_obj.ladder.side
+            and shelf_obj.ladder.side.range and shelf_obj.ladder.side.range.floor
+        ):
+            ladder = shelf_obj.ladder
+            side   = ladder.side
+            rng    = side.range
+            floor  = rng.floor
+            # S-{floor_code}-{range_number}{side_letter}-{ladder_number}-{shelf_number}-
+            cn_prefix = (
+                f"S-{floor.code}-{rng.range_number}{side.side_letter}"
+                f"-{ladder.ladder_number}-{shelf_obj.shelf_number}-"
+            ).upper()
+
+            expected_recs = (
+                db.query(models.IlsRecord)
+                .filter(
+                    sa_func.upper(models.IlsRecord.item_call_number).like(cn_prefix + "%"),
+                    sa_func.upper(models.IlsRecord.status) == "ITEM IN PLACE",
+                    sa_func.upper(models.IlsRecord.lifecycle) == "ACTIVE",
+                )
+                .all()
+            )
+
+            scanned_barcodes = {
+                it.barcode.strip().upper() for it in s.items if it.barcode
+            }
+
+            for rec in expected_recs:
+                if rec.barcode.strip().upper() not in scanned_barcodes:
+                    db.add(models.ScanDiscrepancy(
+                        session_id=session_id,
+                        scan_item_id=None,
+                        type="not_on_shelf",
+                        severity="warning",
+                        detail=(
+                            f"Barcode {rec.barcode!r} \u2014 "
+                            f"{rec.title or 'Unknown title'} "
+                            f"[{rec.item_call_number}] is recorded as "
+                            f"\u2018Item in place\u2019 / Active but was not "
+                            f"scanned on this shelf."
+                        ),
+                    ))
+
     s.analyzed_at = datetime.now(tz=timezone.utc)
     db.commit()
 
@@ -557,6 +651,7 @@ def _make_empty_stats() -> dict:
         "by_type": {
             "no_record": 0, "out_of_order": 0, "wrong_location": 0,
             "status_issue": 0, "fulfillment_note": 0, "deleted_on_shelf": 0,
+            "not_on_shelf": 0,
         },
     }
 
@@ -711,6 +806,143 @@ def morgan_overview(db: Session = Depends(get_db)):
         "summary":   aggregate(None),
         "locations": locations_out,
     }
+
+
+# ── Storage Inventory Overview ────────────────────────────────────────────────
+
+@router.get("/storage-overview")
+def storage_overview(db: Session = Depends(get_db)):
+    """Aggregate coverage, measurement, and discrepancy stats for all Storage shelves,
+    broken down by Alma location code."""
+
+    floor_ids = [
+        row[0] for row in
+        db.query(models.Floor.id).filter(models.Floor.facility == "storage").all()
+    ]
+    if not floor_ids:
+        return {"summary": _make_empty_stats(), "locations": []}
+
+    ranges = (
+        db.query(models.Range)
+        .options(
+            joinedload(models.Range.sides)
+            .joinedload(models.RangeSide.ladders)
+            .joinedload(models.Ladder.shelves)
+        )
+        .filter(models.Range.floor_id.in_(floor_ids))
+        .all()
+    )
+
+    shelf_loc_map: dict[int, list[str]] = {}
+    for rng in ranges:
+        raw = rng.location_codes or ""
+        codes = [c.strip() for c in raw.split(",") if c.strip()] or ["__uncategorized__"]
+        for side in rng.sides:
+            for ladder in side.ladders:
+                for shelf in ladder.shelves:
+                    shelf_loc_map[shelf.id] = codes
+
+    all_shelf_ids = list(shelf_loc_map.keys())
+    if not all_shelf_ids:
+        return {"summary": _make_empty_stats(), "locations": []}
+
+    sessions = (
+        db.query(models.ScanSession)
+        .filter(models.ScanSession.shelf_id.in_(all_shelf_ids))
+        .options(joinedload(models.ScanSession.discrepancies))
+        .all()
+    )
+
+    complete_shelf_ids: set[int] = set()
+    for s in sessions:
+        if s.shelf_id and s.status == "complete":
+            complete_shelf_ids.add(s.shelf_id)
+
+    storage_locs = (
+        db.query(models.Location)
+        .join(models.Collection)
+        .filter(models.Collection.name == "Storage")
+        .order_by(models.Location.code)
+        .all()
+    )
+    loc_display: dict[str, str] = {loc.code: loc.display_name for loc in storage_locs}
+
+    all_codes_in_ranges: set[str] = set()
+    for codes in shelf_loc_map.values():
+        all_codes_in_ranges.update(codes)
+
+    _VALID_TYPES = {
+        "no_record", "out_of_order", "wrong_location",
+        "status_issue", "fulfillment_note", "deleted_on_shelf",
+        "not_on_shelf",
+    }
+
+    def aggregate(target_codes):
+        in_scope = set(all_shelf_ids) if target_codes is None else {
+            sid for sid, codes in shelf_loc_map.items()
+            if any(c in target_codes for c in codes)
+        }
+        shelves_total = len(in_scope)
+        shelves_done  = len(in_scope & complete_shelf_ids)
+        coverage_pct  = round(100 * shelves_done / shelves_total, 1) if shelves_total else 0.0
+        inches_total     = 0.0
+        last_inventoried = None
+        disc_total       = 0
+        disc_resolved    = 0
+        by_severity      = {"error": 0, "warning": 0, "info": 0}
+        by_type          = {t: 0 for t in _VALID_TYPES}
+        for s in sessions:
+            if not s.shelf_id or s.shelf_id not in in_scope:
+                continue
+            if s.status == "complete" and s.inches_of_material:
+                inches_total += float(s.inches_of_material)
+            if s.analyzed_at and s.status in ("analyzed", "complete"):
+                if last_inventoried is None or s.analyzed_at > last_inventoried:
+                    last_inventoried = s.analyzed_at
+            for d in s.discrepancies:
+                disc_total += 1
+                if d.resolved_at:
+                    disc_resolved += 1
+                sev = d.severity if d.severity in by_severity else "info"
+                by_severity[sev] += 1
+                if d.type in by_type:
+                    by_type[d.type] += 1
+        resolution_pct = round(100 * disc_resolved / disc_total, 1) if disc_total else 0.0
+        return {
+            "shelves_total":          shelves_total,
+            "shelves_done":           shelves_done,
+            "coverage_pct":           coverage_pct,
+            "inches_measured":        round(inches_total, 2),
+            "last_inventoried":       last_inventoried.isoformat() if last_inventoried else None,
+            "discrepancies_total":    disc_total,
+            "discrepancies_resolved": disc_resolved,
+            "resolution_pct":         resolution_pct,
+            "by_severity":            by_severity,
+            "by_type":                by_type,
+        }
+
+    known_codes   = [loc.code for loc in storage_locs]
+    unknown_codes = sorted(
+        c for c in all_codes_in_ranges
+        if c != "__uncategorized__" and c not in loc_display
+    )
+    has_uncategorized = "__uncategorized__" in all_codes_in_ranges
+
+    locations_out = []
+    for code in known_codes + unknown_codes:
+        locations_out.append({
+            "code":         code,
+            "display_name": loc_display.get(code, code),
+            **aggregate({code}),
+        })
+    if has_uncategorized:
+        locations_out.append({
+            "code":         "__uncategorized__",
+            "display_name": "Uncategorized",
+            **aggregate({"__uncategorized__"}),
+        })
+
+    return {"summary": aggregate(None), "locations": locations_out}
 
 
 # ── Resolution options ────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """
-LC Call Number Normalizer
-=========================
+LC Call Number Normalizer  &  Storage Call Number Normalizer
+=============================================================
 Produces a fixed-width sortable string from a Library of Congress call number
 so that lexicographic comparison gives correct LC shelf order.
 
@@ -128,3 +128,58 @@ def normalize_lc(call_number: str) -> Optional[str]:
         key += " " + " ".join(parts)
 
     return key
+
+
+# ── Storage Call Number Normalizer ────────────────────────────────────────────
+
+# Format: S-{floor}-{range}-{ladder}-{shelf}-{item}
+# Floors: A (Addition), 1 (First floor), 2 (Second floor)
+# Example: S-1-02A-03-04-005
+_STORAGE_RE = re.compile(
+    r"^S-([A-Z0-9])-([0-9]+[A-Z]?)-([0-9]+)-([0-9]+)-([0-9]+)$",
+    re.IGNORECASE,
+)
+
+# Map floor codes to a consistent sort key so A (Addition) sorts first
+_FLOOR_SORT = {"A": "0", "1": "1", "2": "2"}
+
+
+def normalize_storage(call_number: str) -> Optional[str]:
+    """
+    Return a sortable normalised string for a Storage call number, or None if
+    the string cannot be parsed as a valid storage call number.
+
+    Storage call number anatomy:
+      S-{floor}-{range}-{ladder}-{shelf}-{item}
+      S-1-02A-03-04-005
+
+    Floors: A = Addition  (sorts as 0)
+            1 = First floor (sorts as 1)
+            2 = Second floor (sorts as 2)
+
+    All numeric segments are zero-padded so lexicographic comparison gives
+    correct physical shelf order.
+    """
+    if not call_number:
+        return None
+    s = call_number.strip().upper()
+    m = _STORAGE_RE.match(s)
+    if not m:
+        return None
+
+    floor_raw, rng_raw, ladder_raw, shelf_raw, item_raw = m.groups()
+
+    floor_key = _FLOOR_SORT.get(floor_raw, floor_raw)
+
+    # Range: numeric prefix zero-padded to 3, optional letter suffix preserved
+    rng_m = re.match(r"^(\d+)([A-Z]?)$", rng_raw)
+    if rng_m:
+        rng_norm = f"{int(rng_m.group(1)):03d}{rng_m.group(2)}"
+    else:
+        rng_norm = rng_raw
+
+    ladder_norm = f"{int(ladder_raw):04d}"
+    shelf_norm  = f"{int(shelf_raw):04d}"
+    item_norm   = f"{int(item_raw):06d}"
+
+    return f"{floor_key}-{rng_norm}-{ladder_norm}-{shelf_norm}-{item_norm}"

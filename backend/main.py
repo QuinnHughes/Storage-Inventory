@@ -15,6 +15,7 @@ import webbrowser
 import threading
 from pathlib import Path
 
+from fastapi.concurrency import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,8 +85,8 @@ if _static_dir:
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     try:
         create_tables()
     except Exception:

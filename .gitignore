@@ -7,6 +7,10 @@ venv/
 .venv
 env/
 
+#Electron
+dist-electron/
+backend-dist/
+
 # PyInstaller
 build/
 dist/

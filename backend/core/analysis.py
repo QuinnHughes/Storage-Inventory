@@ -18,7 +18,7 @@ import bisect
 from datetime import datetime, timezone
 from typing import Optional
 
-from core.callnumber import normalize_lc
+from core.callnumber import normalize_lc, normalize_storage
 from db import models
 
 
@@ -76,6 +76,7 @@ def _lis_indices(norms: list[str]) -> set[int]:
 def analyze_session(
     session: models.ScanSession,
     location_code: Optional[str] = None,
+    call_number_type: str = "lc",
 ) -> list[models.ScanDiscrepancy]:
     """
     Analyse *session.items* and return a list of ScanDiscrepancy objects.
@@ -83,9 +84,12 @@ def analyze_session(
 
     Parameters
     ----------
-    session       : ScanSession with .items loaded (ordered by position)
-    location_code : expected location code for the shelf being read
-                    (used for wrong_location checks; pass None to skip)
+    session          : ScanSession with .items loaded (ordered by position)
+    location_code    : expected location code for the shelf being read
+                       (used for wrong_location checks; pass None to skip)
+    call_number_type : "lc" (default) uses LC normalisation;
+                       "storage" uses storage call-number normalisation on
+                       item_call_number values.
     """
     discrepancies: list[models.ScanDiscrepancy] = []
 
@@ -149,10 +153,11 @@ def analyze_session(
     # ── Pass 2: out-of-order detection via LIS ────────────────────────────────
     # Re-normalise on the fly so fixes to the normalization algorithm take
     # effect immediately without requiring a full ILS re-upload.
+    normalizer = normalize_storage if call_number_type == "storage" else normalize_lc
     normable: list[models.ScanItem] = []
     fresh_norms: list[str] = []
     for it in matched_items:
-        norm = normalize_lc(it.call_number) if it.call_number else it.call_number_norm
+        norm = normalizer(it.call_number) if it.call_number else it.call_number_norm
         if norm:
             normable.append(it)
             fresh_norms.append(norm)

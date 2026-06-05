@@ -161,6 +161,9 @@ export const api = {
   // Scanning – morgan overview
   getMorganOverview: () => request("GET", "/scanning/morgan-overview"),
 
+  // Scanning – storage overview
+  getStorageOverview: () => request("GET", "/scanning/storage-overview"),
+
   // Scanning – resolution options
   getResolutionOptions: () =>
     request("GET", "/scanning/resolution-options"),
