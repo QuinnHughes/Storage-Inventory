@@ -137,7 +137,7 @@ def _migrate(engine) -> None:
     migrations: list[str] = [
         "ALTER TABLE floors ADD COLUMN IF NOT EXISTS facility VARCHAR(20) NOT NULL DEFAULT 'storage'",
         "ALTER TABLE ranges ADD COLUMN IF NOT EXISTS location_codes TEXT",
-        "ALTER TABLE piece_templates ADD COLUMN IF NOT EXISTS facility VARCHAR(20)",
+        "ALTER TABLE scan_sessions ADD COLUMN IF NOT EXISTS range_side_id INTEGER REFERENCES range_sides(id) ON DELETE SET NULL",
     ]
     with engine.begin() as conn:
         for stmt in migrations:

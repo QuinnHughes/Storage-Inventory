@@ -40,25 +40,197 @@ function rangeStats(range) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Scanning() {
-  const navigate = useNavigate();
-
-  const [floors, setFloors] = useState([]);
-  const [selectedFloorId, setSelectedFloorId] = useState(null);
-  const [treeData, setTreeData] = useState(null);
+// ── Location Picker ───────────────────────────────────────────────────────────
+function LocationPicker({ onStart, onCancel }) {
+  const [floors, setFloors]           = useState([]);
+  const [ranges, setRanges]           = useState([]);
+  const [rangeDetail, setRangeDetail] = useState(null);
+  const [selFloor, setSelFloor]       = useState(null);
+  const [selRange, setSelRange]       = useState(null);
+  const [selSide, setSelSide]         = useState(null);
   const [loadingFloors, setLoadingFloors] = useState(true);
-  const [loadingTree, setLoadingTree] = useState(false);
-  const [expandedRanges, setExpandedRanges] = useState(new Set());
-  const [creating, setCreating] = useState(null); // shelf.id currently being created
-  const [rescanModal, setRescanModal] = useState(null); // shelf object awaiting rescan decision
+  const [loadingRanges, setLoadingRanges] = useState(false);
+  const [starting, setStarting]       = useState(false);
 
-  // Load morgan floors on mount
+  // Load Morgan floors once
   useEffect(() => {
     api.getFloors("morgan")
-      .then(data => {
-        setFloors(data);
-        if (data.length > 0) setSelectedFloorId(data[0].id);
-      })
+      .then(setFloors)
+      .catch(() => {})
+      .finally(() => setLoadingFloors(false));
+  }, []);
+
+  const selectFloor = (floor) => {
+    if (selFloor?.id === floor.id) return;
+    setSelFloor(floor);
+    setSelRange(null);
+    setRangeDetail(null);
+    setSelSide(null);
+    setRanges([]);
+    setLoadingRanges(true);
+    api.getRanges(floor.id)
+      .then(setRanges)
+      .catch(() => {})
+      .finally(() => setLoadingRanges(false));
+  };
+
+  const selectRange = (range) => {
+    if (selRange?.id === range.id) return;
+    setSelRange(range);
+    setRangeDetail(null);
+    setSelSide(null);
+    api.getRange(range.id)
+      .then(setRangeDetail)
+      .catch(() => {});
+  };
+
+  const handleStart = async () => {
+    if (!selSide) return;
+    setStarting(true);
+    try {
+      const s = await api.createSession({ range_side_id: selSide.id });
+      onStart(s.id);
+    } catch (e) {
+      alert(e.message);
+      setStarting(false);
+    }
+  };
+
+  const colBase = "rounded-lg px-3 py-2 text-sm text-left w-full border transition-colors";
+  const colActive = "border-green-700 bg-green-50 text-green-900 font-medium";
+  const colIdle   = "border-gray-200 bg-white text-gray-700 hover:border-green-400 hover:bg-green-50";
+
+  return (
+    <div className="mb-6 bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">New Scan Session — Select Location</h2>
+      <div className="grid grid-cols-3 gap-4">
+
+        {/* Column 1: Floors */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Floor</p>
+          {loadingFloors ? (
+            <p className="text-xs text-gray-400 italic">Loading…</p>
+          ) : floors.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No Morgan floors configured.</p>
+          ) : (
+            <div className="space-y-1">
+              {floors.map(f => (
+                <button key={f.id} onClick={() => selectFloor(f)}
+                  className={`${colBase} ${selFloor?.id === f.id ? colActive : colIdle}`}>
+                  {f.display_name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Column 2: Ranges */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Range</p>
+          {!selFloor ? (
+            <p className="text-xs text-gray-400 italic">Select a floor first</p>
+          ) : loadingRanges ? (
+            <p className="text-xs text-gray-400 italic">Loading…</p>
+          ) : ranges.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No ranges on this floor.</p>
+          ) : (
+            <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+              {ranges.map(r => (
+                <button key={r.id} onClick={() => selectRange(r)}
+                  className={`${colBase} ${selRange?.id === r.id ? colActive : colIdle}`}>
+                  <span className="font-mono">Range {r.range_number}</span>
+                  {r.material_type && (
+                    <span className="ml-2 text-xs text-gray-400">{r.material_type}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Column 3: Sides */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Side</p>
+          {!selRange ? (
+            <p className="text-xs text-gray-400 italic">Select a range first</p>
+          ) : !rangeDetail ? (
+            <p className="text-xs text-gray-400 italic">Loading…</p>
+          ) : rangeDetail.sides.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No sides for this range.</p>
+          ) : (
+            <div className="space-y-1">
+              {rangeDetail.sides.map(side => (
+                <button key={side.id} onClick={() => setSelSide(side)}
+                  className={`${colBase} ${selSide?.id === side.id ? colActive : colIdle}`}>
+                  Side {side.side_letter}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Summary + actions */}
+      {selSide && (
+        <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-3">
+          <span className="text-xs text-gray-500">
+            <span className="font-medium text-gray-700">{selFloor.display_name}</span>
+            {" · "}Range {selRange.range_number}
+            {" · "}Side {selSide.side_letter}
+          </span>
+        </div>
+      )}
+      <div className="mt-4 flex gap-2">
+        <button
+          onClick={handleStart}
+          disabled={!selSide || starting}
+          className="px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-40"
+          style={{ backgroundColor: "#1E4D2B" }}
+        >
+          {starting ? "Starting…" : "Start Scanning"}
+        </button>
+        <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-800">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Session location display ──────────────────────────────────────────────────
+function LocationCell({ session: s }) {
+  if (s.location) {
+    return (
+      <div>
+        <span className="font-medium text-gray-800">
+          Range {s.location.range_number} · Side {s.location.side_letter}
+        </span>
+        <span className="block text-xs text-gray-400 mt-0.5">{s.location.floor_display_name}</span>
+      </div>
+    );
+  }
+  return (
+    <span className="text-gray-700">
+      {s.location_label || <span className="text-gray-400 italic">No label</span>}
+    </span>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function Scanning() {
+  const navigate = useNavigate();
+  const [sessions, setSessions] = useState([]);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [loading, setLoading]   = useState(true);
+  const [creating, setCreating] = useState(false);
+
+  const PER_PAGE = 20;
+
+  const load = () => {
+    setLoading(true);
+    api.listSessions(page, PER_PAGE)
+      .then(r => { setSessions(r.items); setTotal(r.total); })
       .catch(() => {})
       .finally(() => setLoadingFloors(false));
   }, []);
@@ -75,57 +247,41 @@ export default function Scanning() {
       .finally(() => setLoadingTree(false));
   }, [selectedFloorId]);
 
-  const toggleRange = (rangeId) => {
-    setExpandedRanges(prev => {
-      const next = new Set(prev);
-      next.has(rangeId) ? next.delete(rangeId) : next.add(rangeId);
-      return next;
-    });
-  };
-
-  const handleShelfClick = async (shelf) => {
-    if (shelf.active_session_id) {
-      navigate(`/morgan/scanning/${shelf.active_session_id}`);
-      return;
-    }
-    if (shelf.last_session_id) {
-      setRescanModal(shelf);
-      return;
-    }
-    setCreating(shelf.id);
-    try {
-      const session = await api.createSession({ shelf_id: shelf.id });
-      navigate(`/morgan/scanning/${session.id}`);
-    } catch (e) {
-      alert(e.message);
-      setCreating(null);
-    }
-  };
-
-  const handleRescan = async (shelf) => {
-    setRescanModal(null);
-    setCreating(shelf.id);
-    try {
-      const session = await api.createSession({ shelf_id: shelf.id });
-      navigate(`/morgan/scanning/${session.id}`);
-    } catch (e) {
-      alert(e.message);
-      setCreating(null);
-    }
+  const deleteSession = async (id) => {
+    if (!confirm("Delete this scan session and all its data?")) return;
+    await api.deleteSession(id);
+    load();
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Scanning</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Select a location — expand a range, then click a shelf to start or resume scanning.
-        </p>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Scanning</h1>
+          <p className="text-sm text-gray-500 mt-1">Shelf-reading sessions — scan a shelf, analyse, find discrepancies.</p>
+        </div>
+        {!creating && (
+          <button
+            onClick={() => setCreating(true)}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+            style={{ backgroundColor: "#1E4D2B" }}
+          >
+            + New Session
+          </button>
+        )}
       </div>
 
-      {loadingFloors ? (
+      {/* Location picker */}
+      {creating && (
+        <LocationPicker
+          onStart={(id) => navigate(`/morgan/scanning/${id}`)}
+          onCancel={() => setCreating(false)}
+        />
+      )}
+
+      {loading ? (
         <p className="text-sm text-gray-400">Loading…</p>
       ) : floors.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
@@ -134,45 +290,48 @@ export default function Scanning() {
         </div>
       ) : (
         <>
-          {/* Floor tabs */}
-          <div className="flex gap-2 mb-5 flex-wrap">
-            {floors.map(f => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedFloorId(f.id)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                  selectedFloorId === f.id
-                    ? "text-white border-transparent"
-                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                }`}
-                style={selectedFloorId === f.id ? { backgroundColor: "#1E4D2B" } : {}}
-              >
-                {f.display_name}
-              </button>
-            ))}
-          </div>
-
-          {loadingTree ? (
-            <p className="text-sm text-gray-400">Loading…</p>
-          ) : !treeData || treeData.ranges.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <p className="text-4xl mb-3">📦</p>
-              <p className="text-sm">No ranges defined for this floor. Add ranges in Data Entry.</p>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                {treeData.ranges.map(rng => {
-                  const { total, done } = rangeStats(rng);
-                  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                  const isExpanded = expandedRanges.has(rng.id);
-
-                  return (
-                    <div
-                      key={rng.id}
-                      className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
-                    >
-                      {/* Range header row */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left">Location</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-right">Items</th>
+                  <th className="px-4 py-3 text-right">Discrepancies</th>
+                  <th className="px-4 py-3 text-left">Created</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sessions.map(s => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <LocationCell session={s} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[s.status] ?? "bg-gray-100 text-gray-600"}`}>
+                        {s.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">{s.item_count}</td>
+                    <td className="px-4 py-3 text-right">
+                      {s.discrepancy_count > 0 ? (
+                        <span className="font-mono text-amber-700 font-medium">{s.discrepancy_count}</span>
+                      ) : (
+                        <span className="font-mono text-gray-400">{s.discrepancy_count}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => navigate(`/morgan/scanning/${s.id}`)}
+                        className="text-xs font-medium px-3 py-1 rounded-lg mr-2"
+                        style={{ color: "#1E4D2B" }}
+                      >
+                        {s.status === "scanning" ? "Continue" : "View"}
+                      </button>
                       <button
                         onClick={() => toggleRange(rng.id)}
                         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"

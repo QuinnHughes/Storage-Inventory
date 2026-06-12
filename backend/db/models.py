@@ -224,6 +224,8 @@ class ScanSession(Base):
     id                 = Column(Integer, primary_key=True)
     shelf_id           = Column(Integer, ForeignKey("shelves.id", ondelete="SET NULL"),
                                 nullable=True, index=True)
+    range_side_id      = Column(Integer, ForeignKey("range_sides.id", ondelete="SET NULL"),
+                                nullable=True, index=True)
     # Human-readable location path — auto-built or manually entered
     location_label     = Column(String(300), nullable=True)
     status             = Column(String(20),  nullable=False, default="scanning")
@@ -233,7 +235,8 @@ class ScanSession(Base):
     created_at         = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     analyzed_at        = Column(DateTime(timezone=True), nullable=True)
 
-    shelf        = relationship("Shelf")
+    shelf      = relationship("Shelf")
+    range_side = relationship("RangeSide")
     items        = relationship("ScanItem",        cascade="all, delete-orphan",
                                 order_by="ScanItem.position", back_populates="session")
     discrepancies = relationship("ScanDiscrepancy", cascade="all, delete-orphan",
