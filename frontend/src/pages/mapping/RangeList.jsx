@@ -282,12 +282,20 @@ export default function RangeList() {
                         </button>
                       </span>
                     ) : (
-                      <button
-                        onClick={() => setConfirmDelete(r.id)}
-                        className="text-xs text-gray-400 hover:text-red-600 transition-colors"
-                      >
-                        Delete
-                      </button>
+                      <span className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => navigate(`/mapping/ranges/${r.id}/edit`)}
+                          className="text-xs font-medium px-2 py-1 rounded border border-gray-200 hover:border-green-700 hover:text-green-700 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setConfirmDelete(r.id)}
+                          className="text-xs text-gray-400 hover:text-red-600 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </span>
                     )}
                   </td>
                 </tr>

@@ -5,38 +5,38 @@ const cards = [
     title: "Shelf Scanning",
     description:
       "Select shelves by location to scan or upload barcodes to inventory. Then run analysis to find and fix discrepancies.",
-    to: "/morgan/scanning",
+    to: "/storage/scanning",
     icon: "📚",
     ready: true,
   },
   {
     title: "Inventory Overview",
     description:
-      "Coverage stats, discrepancy analysis, and measurement totals across Morgan's locations — filter by Alma location code to drill into any area.",
-    to: "/morgan/overview",
+      "Coverage stats, discrepancy analysis, and measurement totals across Storage's locations — filter by location code to drill into any area.",
+    to: "/storage/overview",
     icon: "📊",
     ready: true,
   },
   {
     title: "Settings",
     description:
-      "Configure Morgan-specific options: location codes, expected call-number ranges per range/section, and analysis thresholds.",
-    to: "/morgan/settings",
+      "Configure Storage-specific options: location codes, expected call-number ranges per range/section, and analysis thresholds.",
+    to: "/storage/settings",
     icon: "⚙️",
     ready: true,
   },
 ];
 
-export default function MorganInventory() {
+export default function StorageInventory() {
   const navigate = useNavigate();
 
   return (
     <div>
       <h1 className="text-3xl font-bold mb-2" style={{ color: "#1E4D2B" }}>
-        Morgan Inventory
+        Storage Inventory
       </h1>
       <p className="text-base text-gray-500 mb-10">
-        Tools for performing inventories at Morgan Library.
+        Tools for performing inventories at the Storage facility.
       </p>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

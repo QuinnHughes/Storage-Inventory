@@ -20,6 +20,7 @@ MATERIAL_TYPES = [
 class ShelfIn(BaseModel):
     shelf_number: str
     width_inches: Optional[Decimal] = None
+    fill_inches:  Optional[Decimal] = None
 
 
 class LadderIn(BaseModel):
@@ -56,6 +57,36 @@ class RangeUpdate(BaseModel):
 
 class ShelfWidthUpdate(BaseModel):
     width_inches: Optional[Decimal] = None
+    fill_inches:  Optional[Decimal] = None
+
+
+class BulkRangeCreate(BaseModel):
+    floor_id: int
+    range_from: int
+    range_to: int
+    material_type: Optional[str] = None
+    notes: Optional[str] = None
+    location_codes: list[str] = []
+    sides: list[SideIn]
+
+    @field_validator("range_from", "range_to")
+    @classmethod
+    def valid_range_num(cls, v: int) -> int:
+        if v < 1 or v > 99:
+            raise ValueError("range number must be between 1 and 99")
+        return v
+
+
+class AddLadderBody(BaseModel):
+    shelves_count: int = 0
+    width_inches: Optional[Decimal] = None
+    fill_inches:  Optional[Decimal] = None
+
+
+class AddShelvesBody(BaseModel):
+    count: int = 1
+    width_inches: Optional[Decimal] = None
+    fill_inches:  Optional[Decimal] = None
 
 
 # ── Response bodies ───────────────────────────────────────────────────────────
@@ -64,6 +95,7 @@ class ShelfOut(BaseModel):
     id: int
     shelf_number: str
     width_inches: Optional[Decimal]
+    fill_inches:  Optional[Decimal]
 
     model_config = {"from_attributes": True}
 
@@ -222,6 +254,7 @@ class PieceTemplateCreate(BaseModel):
     width_inches: Decimal = Decimal("35")
     depth_inches: Decimal = Decimal("24")
     color: Optional[str] = None
+    facility: Optional[str] = None  # "storage" | "morgan" | None = shared
 
 
 class PieceTemplateOut(BaseModel):
@@ -231,6 +264,7 @@ class PieceTemplateOut(BaseModel):
     width_inches: Decimal
     depth_inches: Decimal
     color: Optional[str]
+    facility: Optional[str]
 
     model_config = {"from_attributes": True}
 

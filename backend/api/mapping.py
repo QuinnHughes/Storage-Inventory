@@ -13,7 +13,8 @@ from db import crud, models
 from db.session import get_db
 from schemas.mapping import (
     FloorOut, FloorCreate,
-    RangeCreate, RangeOut, RangeSummary, RangeUpdate,
+    RangeCreate, RangeOut, RangeSummary, RangeUpdate, BulkRangeCreate,
+    LadderOut, AddLadderBody, AddShelvesBody,
     SearchResult, ShelfWidthUpdate, MATERIAL_TYPES,
     MapShapeCreate, MapShapeUpdate, MapShapeBulkUpdate, MapShapeOut,
     PieceTemplateCreate, PieceTemplateOut,
@@ -89,7 +90,7 @@ def create_range(body: RangeCreate, db: Session = Depends(get_db)):
             if ldr_in.shelves:
                 crud.bulk_create_shelves(
                     db, ladder.id,
-                    [{"shelf_number": s.shelf_number, "width_inches": s.width_inches}
+                    [{"shelf_number": s.shelf_number, "width_inches": s.width_inches, "fill_inches": s.fill_inches}
                      for s in ldr_in.shelves]
                 )
 
@@ -113,15 +114,108 @@ def delete_range(range_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Range not found")
 
 
-# ── Shelves ───────────────────────────────────────────────────────────────────
+@router.post("/ranges/bulk-create", status_code=201)
+def bulk_create_ranges(body: BulkRangeCreate, db: Session = Depends(get_db)):
+    """Create multiple ranges (range_from..range_to inclusive) with the same structure.
+    Ranges that already exist on this floor are silently skipped.
+    """
+    floor = crud.get_floor(db, body.floor_id)
+    if not floor:
+        raise HTTPException(404, "Floor not found")
+    if body.range_to < body.range_from:
+        raise HTTPException(422, "range_to must be >= range_from")
+    if body.material_type and body.material_type not in MATERIAL_TYPES:
+        raise HTTPException(422, f"Invalid material_type. Choose from: {', '.join(MATERIAL_TYPES)}")
+
+    created = 0
+    skipped = 0
+    for num in range(body.range_from, body.range_to + 1):
+        rn = str(num).zfill(2)
+        if crud.get_range_by_floor_and_number(db, body.floor_id, rn):
+            skipped += 1
+            continue
+        rng = crud.create_range(
+            db, body.floor_id, rn,
+            body.material_type, body.notes, body.location_codes,
+        )
+        for side_in in body.sides:
+            side = crud.create_range_side(db, rng.id, side_in.side_letter)
+            for ldr_in in side_in.ladders:
+                ladder = crud.create_ladder(db, side.id, ldr_in.ladder_number)
+                if ldr_in.shelves:
+                    crud.bulk_create_shelves(
+                        db, ladder.id,
+                        [{"shelf_number": s.shelf_number, "width_inches": s.width_inches, "fill_inches": s.fill_inches}
+                         for s in ldr_in.shelves]
+                    )
+        created += 1
+
+    return {"created": created, "skipped": skipped}
+
+
+# ── Ladders ────────────────────────────────────────────────────────────────────
+
+@router.post("/sides/{side_id}/ladders", response_model=LadderOut, status_code=201)
+def add_ladder_to_side(side_id: int, body: AddLadderBody, db: Session = Depends(get_db)):
+    """Append a new ladder to an existing range side, optionally pre-filling shelves."""
+    side = crud.get_range_side(db, side_id)
+    if not side:
+        raise HTTPException(404, "Side not found")
+    existing_nums = sorted(int(l.ladder_number) for l in side.ladders) if side.ladders else []
+    next_num = (existing_nums[-1] + 1) if existing_nums else 1
+    ladder = crud.create_ladder(db, side_id, str(next_num).zfill(2))
+    if body.shelves_count and body.shelves_count > 0:
+        crud.bulk_create_shelves(
+            db, ladder.id,
+            [{"shelf_number": str(i).zfill(2), "width_inches": body.width_inches, "fill_inches": body.fill_inches}
+             for i in range(1, body.shelves_count + 1)]
+        )
+    db.refresh(ladder)
+    return ladder
+
+
+@router.delete("/ladders/{ladder_id}", status_code=204)
+def delete_ladder(ladder_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_ladder(db, ladder_id):
+        raise HTTPException(404, "Ladder not found")
+
+
+# ── Shelves ────────────────────────────────────────────────────────────────────
+
+@router.post("/ladders/{ladder_id}/shelves", response_model=LadderOut, status_code=201)
+def add_shelves_to_ladder(ladder_id: int, body: AddShelvesBody, db: Session = Depends(get_db)):
+    """Append one or more shelves to an existing ladder."""
+    ladder = crud.get_ladder(db, ladder_id)
+    if not ladder:
+        raise HTTPException(404, "Ladder not found")
+    existing_nums = sorted(int(s.shelf_number) for s in ladder.shelves) if ladder.shelves else []
+    next_num = (existing_nums[-1] + 1) if existing_nums else 1
+    count = max(1, body.count)
+    crud.bulk_create_shelves(
+        db, ladder_id,
+        [{"shelf_number": str(next_num + i).zfill(2), "width_inches": body.width_inches, "fill_inches": body.fill_inches}
+         for i in range(count)]
+    )
+    db.refresh(ladder)
+    return ladder
+
 
 @router.put("/shelves/{shelf_id}", response_model=dict)
 def update_shelf(shelf_id: int, body: ShelfWidthUpdate, db: Session = Depends(get_db)):
-    shelf = crud.update_shelf_width(db, shelf_id, body.width_inches)
+    shelf = crud.update_shelf_width(db, shelf_id, body.width_inches, body.fill_inches)
     if not shelf:
         raise HTTPException(404, "Shelf not found")
-    return {"id": shelf.id, "shelf_number": shelf.shelf_number,
-            "width_inches": str(shelf.width_inches) if shelf.width_inches is not None else None}
+    return {
+        "id": shelf.id, "shelf_number": shelf.shelf_number,
+        "width_inches": str(shelf.width_inches) if shelf.width_inches is not None else None,
+        "fill_inches":  str(shelf.fill_inches)  if shelf.fill_inches  is not None else None,
+    }
+
+
+@router.delete("/shelves/{shelf_id}", status_code=204)
+def delete_shelf(shelf_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_shelf(db, shelf_id):
+        raise HTTPException(404, "Shelf not found")
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
@@ -206,8 +300,8 @@ def bulk_update_shapes(body: list[MapShapeBulkUpdate], db: Session = Depends(get
 # ── Piece Templates ───────────────────────────────────────────────────────────
 
 @router.get("/piece-templates", response_model=list[PieceTemplateOut])
-def get_piece_templates(db: Session = Depends(get_db)):
-    return crud.list_piece_templates(db)
+def get_piece_templates(facility: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    return crud.list_piece_templates(db, facility=facility)
 
 
 @router.post("/piece-templates", response_model=PieceTemplateOut, status_code=201)

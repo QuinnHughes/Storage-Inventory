@@ -8,7 +8,7 @@
     "dev:backend": "cd backend && python main.py",
     "electron:dev": "electron .",
     "build:frontend": "cd frontend && npm run build",
-    "build:backend": "pyinstaller StorageInventory.spec",
+    "build:backend": "python -m PyInstaller --distpath backend_dist --noconfirm StorageInventory.spec",
     "build": "npm run build:frontend && npm run build:backend && electron-builder",
     "install:backend": "pip install -r backend/requirements.txt"
   },

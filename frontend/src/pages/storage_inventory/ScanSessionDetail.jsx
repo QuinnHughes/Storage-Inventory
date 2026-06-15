@@ -20,6 +20,7 @@ const TYPE_LABEL = {
   status_issue:     "Status Issue",
   fulfillment_note: "Fulfillment Note",
   deleted_on_shelf: "Deleted on Shelf",
+  not_on_shelf:     "Not on Shelf",
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -58,6 +59,17 @@ function ItemRow({ item, onRemove, readonly }) {
   );
 }
 
+function SummaryRow({ color, label, count }) {
+  const dot = { red: "bg-red-500", amber: "bg-amber-400", blue: "bg-blue-400" }[color];
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`w-2 h-2 rounded-full ${dot}`} />
+      <span className="text-xs text-gray-600 flex-1">{label}</span>
+      <span className="text-xs font-semibold tabular-nums">{count}</span>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ScanSessionDetail() {
   const { id } = useParams();
@@ -65,7 +77,7 @@ export default function ScanSessionDetail() {
 
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [inputMode, setInputMode] = useState("live"); // live | upload
+  const [inputMode, setInputMode] = useState("live");
   const [barcode, setBarcode] = useState("");
   const [adding, setAdding] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -74,8 +86,8 @@ export default function ScanSessionDetail() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [analyzeError, setAnalyzeError] = useState(null);
-  const [locationCode, setLocationCode] = useState(null); // null = auto
-  const [activeTab, setActiveTab] = useState("items"); // items | discrepancies
+  const [locationCode, setLocationCode] = useState("");
+  const [activeTab, setActiveTab] = useState("items");
   const [resolutionOptions, setResolutionOptions] = useState([]);
   const [editingDiscId, setEditingDiscId]         = useState(null);
   const [resolutionForm, setResolutionForm]       = useState({ option_id: "", notes: "" });
@@ -83,7 +95,7 @@ export default function ScanSessionDetail() {
   const [rescanning, setRescanning]               = useState(false);
 
   const inputRef = useRef();
-  const fileRef = useRef();
+  const fileRef  = useRef();
   const bottomRef = useRef();
 
   const reload = useCallback(() => {
@@ -91,41 +103,23 @@ export default function ScanSessionDetail() {
       .then(s => {
         setSession(s);
         setInches(s.inches_of_material != null ? String(s.inches_of_material) : "");
-        // Auto-select the only location code on first load
-        setLocationCode(prev => {
-          if (prev !== null) return prev; // user already chose something
-          const codes = s.location?.location_codes ?? [];
-          return codes.length === 1 ? codes[0] : null;
-        });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
-
-  // Load resolution options once
   useEffect(() => {
     api.getResolutionOptions().then(setResolutionOptions).catch(() => {});
   }, []);
-
-  // Auto-focus input when in live mode
   useEffect(() => {
-    if (inputMode === "live" && session?.status === "scanning") {
-      inputRef.current?.focus();
-    }
+    if (inputMode === "live" && session?.status === "scanning") inputRef.current?.focus();
   }, [inputMode, session?.status]);
-
-  // Scroll to bottom after new item added
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.items?.length]);
-
-  // Re-focus barcode input after each add completes (adding goes false → re-render → input enabled)
   useEffect(() => {
-    if (!adding && inputMode === "live" && session?.status === "scanning") {
-      inputRef.current?.focus();
-    }
+    if (!adding && inputMode === "live" && session?.status === "scanning") inputRef.current?.focus();
   }, [adding]);
 
   const addBarcode = async (e) => {
@@ -198,7 +192,7 @@ export default function ScanSessionDetail() {
     setRescanning(true);
     try {
       const newSession = await api.createSession({ shelf_id: session.shelf_id });
-      navigate(`/morgan/scanning/${newSession.id}`);
+      navigate(`/storage/scanning/${newSession.id}`);
     } catch (e) {
       alert(e.message);
       setRescanning(false);
@@ -245,8 +239,8 @@ export default function ScanSessionDetail() {
   if (loading) return <p className="text-sm text-gray-400 py-10">Loading…</p>;
   if (!session) return <p className="text-sm text-red-500 py-10">Session not found.</p>;
 
-  const isScanning   = session.status === "scanning";
-  const canResolve   = session.status === "analyzed" || session.status === "complete";
+  const isScanning    = session.status === "scanning";
+  const canResolve    = session.status === "analyzed" || session.status === "complete";
   const resolvedCount = (session.discrepancies ?? []).filter(d => d.resolved_at).length;
   const discsByItemId = Object.fromEntries(
     (session.discrepancies ?? []).map(d => [d.scan_item_id, d])
@@ -255,13 +249,10 @@ export default function ScanSessionDetail() {
     ...it,
     discrepancy: discsByItemId[it.id] ?? null,
   }));
-
-  // Group discrepancies by type for the summary panel
   const discGroups = {};
   for (const d of session.discrepancies ?? []) {
     (discGroups[d.type] = discGroups[d.type] ?? []).push(d);
   }
-
   const errorCount   = (session.discrepancies ?? []).filter(d => d.severity === "error").length;
   const warningCount = (session.discrepancies ?? []).filter(d => d.severity === "warning").length;
   const infoCount    = (session.discrepancies ?? []).filter(d => d.severity === "info").length;
@@ -271,22 +262,13 @@ export default function ScanSessionDetail() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <button onClick={() => navigate("/morgan/scanning")}
+          <button onClick={() => navigate("/storage/scanning")}
             className="text-xs text-gray-400 hover:text-gray-700 mb-1">
             ← Back to scanning
           </button>
-          {session.location ? (
-            <>
-              <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
-                Range {session.location.range_number} · Side {session.location.side_letter}
-              </h1>
-              <p className="text-xs text-gray-400 mt-0.5">{session.location.floor_display_name}</p>
-            </>
-          ) : (
-            <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
-              {session.location_label || "Scan Session #" + session.id}
-            </h1>
-          )}
+          <h1 className="text-2xl font-bold" style={{ color: "#1E4D2B" }}>
+            {session.location_label || "Scan Session #" + session.id}
+          </h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {session.item_count} items &nbsp;·&nbsp;
             {session.discrepancy_count} discrepancies &nbsp;·&nbsp;
@@ -314,10 +296,8 @@ export default function ScanSessionDetail() {
         {/* ── Left: item list ── */}
         <div className="xl:col-span-2 space-y-4">
 
-          {/* Input controls — only while scanning */}
           {isScanning && (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3">
-              {/* Mode tabs */}
               <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
                 {["live", "upload"].map(m => (
                   <button key={m}
@@ -358,7 +338,7 @@ export default function ScanSessionDetail() {
                     {uploading ? "Uploading…" : "Choose file (.csv / .xlsx)"}
                   </button>
                   <p className="text-xs text-gray-400 mt-1">
-                    File must have a <span className="font-mono">Barcode</span> column header; rows are the scanned barcodes in order.
+                    File must have a <span className="font-mono">Barcode</span> column header.
                   </p>
                   {uploadError && <p className="text-xs text-red-600 mt-1">{uploadError}</p>}
                 </div>
@@ -368,7 +348,6 @@ export default function ScanSessionDetail() {
 
           {/* Item table */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            {/* Tab bar */}
             <div className="flex border-b border-gray-200">
               {["items", "discrepancies"].map(t => (
                 <button key={t}
@@ -387,9 +366,7 @@ export default function ScanSessionDetail() {
 
             {activeTab === "items" ? (
               session.items.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-10">
-                  No items scanned yet.
-                </p>
+                <p className="text-sm text-gray-400 text-center py-10">No items scanned yet.</p>
               ) : (
                 <div className="overflow-auto max-h-[60vh]">
                   <table className="w-full text-sm">
@@ -398,7 +375,7 @@ export default function ScanSessionDetail() {
                         <th className="px-3 py-2 text-right w-10">#</th>
                         <th className="px-3 py-2 text-left">Barcode</th>
                         <th className="px-3 py-2 text-left">Title</th>
-                        <th className="px-3 py-2 text-left">Call Number</th>
+                        <th className="px-3 py-2 text-left">Storage Call #</th>
                         <th className="px-3 py-2 text-left">Issue</th>
                         {isScanning && <th className="px-3 py-2 w-8"></th>}
                       </tr>
@@ -414,7 +391,6 @@ export default function ScanSessionDetail() {
                 </div>
               )
             ) : (
-              /* Discrepancies tab */
               session.discrepancies.length === 0 ? (
                 <p className="text-sm text-green-700 text-center py-10">
                   ✅ No discrepancies found.
@@ -445,7 +421,6 @@ export default function ScanSessionDetail() {
                             </p>
                             <p className="text-xs text-gray-600 mt-0.5">{d.detail}</p>
 
-                            {/* Resolved badge */}
                             {d.resolved_at && !isEditing && (
                               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                                 <span className="text-green-700 text-xs">✓</span>
@@ -465,7 +440,6 @@ export default function ScanSessionDetail() {
                               </div>
                             )}
 
-                            {/* Resolve button (unresolved) */}
                             {canResolve && !d.resolved_at && !isEditing && (
                               <button onClick={() => openEdit(d)}
                                 className="mt-1.5 text-xs text-gray-400 hover:text-green-700 transition-colors">
@@ -473,7 +447,6 @@ export default function ScanSessionDetail() {
                               </button>
                             )}
 
-                            {/* Inline resolution form */}
                             {isEditing && (
                               <div className="mt-2 space-y-2 border-t border-gray-200 pt-2">
                                 <select
@@ -530,49 +503,20 @@ export default function ScanSessionDetail() {
 
         {/* ── Right: controls & summary ── */}
         <div className="space-y-4">
-          {/* Analyse */}
           {isScanning && session.item_count > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-700">Analyse Shelf</h3>
-              {/* Location code selector */}
-              {session.location?.location_codes?.length > 0 ? (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1.5">
-                    Expected location code
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {session.location.location_codes.map(code => (
-                      <button key={code}
-                        onClick={() => setLocationCode(locationCode === code ? null : code)}
-                        className={`px-3 py-1 rounded-full text-xs border font-mono transition-colors ${
-                          locationCode === code
-                            ? "bg-green-700 text-white border-green-700"
-                            : "bg-white text-gray-600 border-gray-300 hover:border-green-600 hover:text-green-800"
-                        }`}>
-                        {code}
-                      </button>
-                    ))}
-                    {locationCode && (
-                      <button onClick={() => setLocationCode(null)}
-                        className="text-xs text-gray-400 hover:text-gray-600 px-1">
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Expected location code <span className="text-gray-400">(optional, for wrong-location checks)</span>
-                  </label>
-                  <input
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none"
-                    placeholder="e.g. ms, msu, ssy"
-                    value={locationCode ?? ""}
-                    onChange={e => setLocationCode(e.target.value || null)}
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Expected location code <span className="text-gray-400">(optional, for wrong-location checks)</span>
+                </label>
+                <input
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none"
+                  placeholder="e.g. ssy, ssf, ssm"
+                  value={locationCode}
+                  onChange={e => setLocationCode(e.target.value)}
+                />
+              </div>
               {analyzeError && <p className="text-xs text-red-600">{analyzeError}</p>}
               <button
                 onClick={runAnalysis}
@@ -584,7 +528,6 @@ export default function ScanSessionDetail() {
             </div>
           )}
 
-          {/* Re-analyse button when already analysed */}
           {session.status === "analyzed" && (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-2">
               <h3 className="text-sm font-semibold text-gray-700">Re-analyse</h3>
@@ -596,14 +539,13 @@ export default function ScanSessionDetail() {
             </div>
           )}
 
-          {/* Discrepancy summary */}
           {session.discrepancy_count > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Summary</h3>
               <div className="space-y-1.5">
-                {errorCount   > 0 && <SummaryRow color="red"    label="Errors"   count={errorCount} />}
-                {warningCount > 0 && <SummaryRow color="amber"  label="Warnings" count={warningCount} />}
-                {infoCount    > 0 && <SummaryRow color="blue"   label="Info"     count={infoCount} />}
+                {errorCount   > 0 && <SummaryRow color="red"   label="Errors"   count={errorCount} />}
+                {warningCount > 0 && <SummaryRow color="amber" label="Warnings" count={warningCount} />}
+                {infoCount    > 0 && <SummaryRow color="blue"  label="Info"     count={infoCount} />}
               </div>
               <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
                 {Object.entries(discGroups).map(([type, items]) => (
@@ -624,7 +566,6 @@ export default function ScanSessionDetail() {
             </div>
           )}
 
-          {/* Shelf measurement */}
           {session.status !== "scanning" && (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-2">
               <h3 className="text-sm font-semibold text-gray-700">Shelf Measurement</h3>
@@ -642,62 +583,14 @@ export default function ScanSessionDetail() {
                 </button>
               </div>
               {session.inches_of_material != null && (
-                <p className="text-xs text-gray-500">
-                  Saved: <span className="font-mono font-medium">{session.inches_of_material}"</span>
+                <p className="text-xs text-gray-400">
+                  Saved: {session.inches_of_material}"
                 </p>
               )}
             </div>
           )}
-
-          {/* Notes */}
-          <NoteEditor sessionId={id} initialNotes={session.notes} onSaved={reload} />
         </div>
       </div>
-    </div>
-  );
-}
-
-function SummaryRow({ color, label, count }) {
-  const colors = {
-    red:   "bg-red-500",
-    amber: "bg-amber-400",
-    blue:  "bg-blue-400",
-  };
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className={`h-2 w-2 rounded-full ${colors[color]}`} />
-      <span className="text-gray-600">{label}</span>
-      <span className="ml-auto font-mono font-medium text-gray-800">{count}</span>
-    </div>
-  );
-}
-
-function NoteEditor({ sessionId, initialNotes, onSaved }) {
-  const [notes, setNotes] = useState(initialNotes ?? "");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => setNotes(initialNotes ?? ""), [initialNotes]);
-
-  const save = async () => {
-    setSaving(true);
-    try { await api.patchSession(sessionId, { notes }); onSaved(); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-2">
-      <h3 className="text-sm font-semibold text-gray-700">Notes</h3>
-      <textarea
-        rows={4}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none"
-        placeholder="Any notes about this shelf…"
-        value={notes}
-        onChange={e => setNotes(e.target.value)}
-      />
-      <button onClick={save} disabled={saving}
-        className="text-xs font-medium px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40">
-        {saving ? "Saving…" : "Save Notes"}
-      </button>
     </div>
   );
 }

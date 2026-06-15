@@ -37,11 +37,18 @@ export const api = {
   getRanges: (floorId) => request("GET", `/mapping/floors/${floorId}/ranges`),
   getRange: (rangeId) => request("GET", `/mapping/ranges/${rangeId}`),
   createRange: (data) => request("POST", "/mapping/ranges", data),
+  bulkCreateRanges: (data) => request("POST", "/mapping/ranges/bulk-create", data),
   updateRange: (rangeId, data) => request("PUT", `/mapping/ranges/${rangeId}`, data),
   deleteRange: (rangeId) => request("DELETE", `/mapping/ranges/${rangeId}`),
 
+  // Mapping — ladders
+  addLadderToSide: (sideId, data) => request("POST", `/mapping/sides/${sideId}/ladders`, data),
+  deleteLadder: (ladderId) => request("DELETE", `/mapping/ladders/${ladderId}`),
+
   // Mapping — shelves
+  addShelvesToLadder: (ladderId, data) => request("POST", `/mapping/ladders/${ladderId}/shelves`, data),
   updateShelf: (shelfId, data) => request("PUT", `/mapping/shelves/${shelfId}`, data),
+  deleteShelf: (shelfId) => request("DELETE", `/mapping/shelves/${shelfId}`),
 
   // Mapping — search
   searchMap: (prefix) => request("GET", `/mapping/search?prefix=${encodeURIComponent(prefix)}`),
@@ -54,7 +61,7 @@ export const api = {
   bulkUpdateShapes: (updates) => request("POST", "/mapping/shapes/bulk-update", updates),
 
   // Mapping — piece templates
-  getTemplates: () => request("GET", "/mapping/piece-templates"),
+  getTemplates: (facility) => request("GET", facility ? `/mapping/piece-templates?facility=${facility}` : "/mapping/piece-templates"),
   createTemplate: (data) => request("POST", "/mapping/piece-templates", data),
   deleteTemplate: (id) => request("DELETE", `/mapping/piece-templates/${id}`),
 
@@ -111,6 +118,9 @@ export const api = {
   updateRecord: (id, data) => request("PUT",    `/analytics/records/${id}`, data),
   deleteRecord: (id)       => request("DELETE", `/analytics/records/${id}`),
 
+  // Scanning – location tree
+  getFloorScanStatus: (floorId) => request("GET", `/scanning/floors/${floorId}/scan-status`),
+
   // Scanning – sessions
   listSessions:   (page = 1, perPage = 20) =>
     request("GET", `/scanning/sessions?page=${page}&per_page=${perPage}`),
@@ -147,4 +157,22 @@ export const api = {
   analyzeSession: (sessionId, locationCode) =>
     request("POST", `/scanning/sessions/${sessionId}/analyze`,
             { location_code: locationCode ?? null }),
+
+  // Scanning – morgan overview
+  getMorganOverview: () => request("GET", "/scanning/morgan-overview"),
+
+  // Scanning – storage overview
+  getStorageOverview: () => request("GET", "/scanning/storage-overview"),
+
+  // Scanning – resolution options
+  getResolutionOptions: () =>
+    request("GET", "/scanning/resolution-options"),
+  createResolutionOption: (data) =>
+    request("POST", "/scanning/resolution-options", data),
+  deleteResolutionOption: (id) =>
+    request("DELETE", `/scanning/resolution-options/${id}`),
+
+  // Scanning – discrepancy resolution
+  resolveDiscrepancy: (sessionId, discId, data) =>
+    request("PATCH", `/scanning/sessions/${sessionId}/discrepancies/${discId}`, data),
 };

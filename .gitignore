@@ -4,7 +4,12 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.venv
 env/
+
+#Electron
+dist-electron/
+backend-dist/
 
 # PyInstaller
 build/

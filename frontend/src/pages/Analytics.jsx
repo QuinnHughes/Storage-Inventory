@@ -13,12 +13,7 @@ const cards = [
     to: "/analytics/records",
     icon: "🔍",
   },
-  {
-    title: "Jobs",
-    description: "Scheduled and batch processing jobs for analytics data.",
-    to: "/analytics/jobs",
-    icon: "⚙️",
-  },
+
 ];
 
 export default function Analytics() {

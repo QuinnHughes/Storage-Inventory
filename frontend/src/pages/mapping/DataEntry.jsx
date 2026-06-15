@@ -75,6 +75,15 @@ export default function DataEntry() {
   const [rangeGlobalFill, setRangeGlobalFill]     = useState({});
   const [currentRangeIndex, setCurrentRangeIndex] = useState(0);
 
+  // Ladders step
+  const [setAllLadderCount, setSetAllLadderCount]   = useState("");
+  const [editingSide, setEditingSide]               = useState(null);
+
+  // Shelves step
+  const [globalShelfCount, setGlobalShelfCount]     = useState("");
+  const [globalShelfWidth, setGlobalShelfWidth]     = useState("");
+  const [expandedLadderKeys, setExpandedLadderKeys] = useState(new Set());
+
   useEffect(() => {
     const fac = localStorage.getItem(FACILITY_KEY) || "storage";
     setFacility(fac);
@@ -281,10 +290,43 @@ export default function DataEntry() {
     }));
   };
 
-  const setShelfWidth = (key, idx, val) => {
+  const applyGlobalShelfFill = () => {
+    const count = parseInt(globalShelfCount, 10);
+    if (!count || count < 1) return;
+    const newShelves = {};
+    const newCounts = {};
+    activeSides.forEach((side) => {
+      const lc = parseInt(ladderCounts[side], 10);
+      for (let l = 1; l <= lc; l++) {
+        const key = `${side}-${l}`;
+        newShelves[key] = Array.from({ length: count }, (_, i) => ({
+          shelf_number: zeroPad(i + 1),
+          width_inches: globalShelfWidth,
+        }));
+        newCounts[key] = String(count);
+      }
+    });
+    setShelvesData((prev) => ({ ...prev, ...newShelves }));
+    setShelfCounts((prev) => ({ ...prev, ...newCounts }));
+    if (globalShelfWidth !== "") setBatchFill((prev) => {
+      const next = { ...prev };
+      Object.keys(newShelves).forEach(k => { next[k] = globalShelfWidth; });
+      return next;
+    });
+  };
+
+  const toggleExpandedLadder = (key) => {
+    setExpandedLadderKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const setShelfField = (key, idx, field, val) => {
     setShelvesData((prev) => {
       const updated = [...prev[key]];
-      updated[idx] = { ...updated[idx], width_inches: val };
+      updated[idx] = { ...updated[idx], [field]: val };
       return { ...prev, [key]: updated };
     });
   };
@@ -755,6 +797,7 @@ export default function DataEntry() {
                 const lNum    = i + 1;
                 const key     = currentRangeNum + "-" + side + "-" + lNum;
                 const shelves = shelvesData[key] || [];
+                const isExpanded = expandedLadderKeys.has(key);
                 return (
                   <div key={key} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">

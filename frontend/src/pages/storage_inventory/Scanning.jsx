@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 
-// ── Morgan side status helpers ────────────────────────────────────────────────
+// ── Shelf status helpers ──────────────────────────────────────────────────────
 
-function shelfClasses(side, creating) {
-  if (creating === side.id)
+function shelfClasses(shelf, creating) {
+  if (creating === shelf.id)
     return "bg-gray-100 text-gray-400 border-gray-200 cursor-wait";
-  switch (side.last_status) {
+  switch (shelf.last_status) {
     case "complete":
       return "bg-green-100 text-green-800 border-green-300 hover:bg-green-200";
     case "analyzed":
@@ -19,9 +19,9 @@ function shelfClasses(side, creating) {
   }
 }
 
-function shelfTitle(side) {
-  if (side.last_scanned_at)
-    return `Last scanned: ${new Date(side.last_scanned_at).toLocaleDateString()}  (${side.session_count} session${side.session_count !== 1 ? "s" : ""})`;
+function shelfTitle(shelf) {
+  if (shelf.last_scanned_at)
+    return `Last scanned: ${new Date(shelf.last_scanned_at).toLocaleDateString()}  (${shelf.session_count} session${shelf.session_count !== 1 ? "s" : ""})`;
   return "Never scanned";
 }
 
@@ -29,27 +29,20 @@ function shelfTitle(side) {
 
 function rangeStats(range) {
   let total = 0, done = 0;
-  for (const side of range.sides) {
-    for (const ladder of side.ladders) {
+  for (const side of range.sides)
+    for (const ladder of side.ladders)
       for (const shelf of ladder.shelves) {
         total++;
         if (shelf.session_count > 0) done++;
       }
-    }
-  }
   return { total, done };
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-const STATUS_COLOR = {
-  scanning: "bg-amber-100 text-amber-800",
-  analyzed: "bg-blue-100 text-blue-800",
-  complete: "bg-green-100 text-green-800",
-};
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Scanning() {
   const navigate = useNavigate();
+
   const [floors, setFloors] = useState([]);
   const [selectedFloorId, setSelectedFloorId] = useState(null);
   const [treeData, setTreeData] = useState(null);
@@ -59,9 +52,10 @@ export default function Scanning() {
   const [creating, setCreating] = useState(null);
   const [rescanModal, setRescanModal] = useState(null);
 
+  // Load storage floors on mount
   useEffect(() => {
-    api.getFloors("morgan")
-      .then((data) => {
+    api.getFloors("storage")
+      .then(data => {
         setFloors(data);
         if (data.length > 0) setSelectedFloorId(data[0].id);
       })
@@ -69,6 +63,7 @@ export default function Scanning() {
       .finally(() => setLoadingFloors(false));
   }, []);
 
+  // Reload tree when floor selection changes
   useEffect(() => {
     if (!selectedFloorId) return;
     setLoadingTree(true);
@@ -81,38 +76,38 @@ export default function Scanning() {
   }, [selectedFloorId]);
 
   const toggleRange = (rangeId) => {
-    setExpandedRanges((prev) => {
+    setExpandedRanges(prev => {
       const next = new Set(prev);
       next.has(rangeId) ? next.delete(rangeId) : next.add(rangeId);
       return next;
     });
   };
 
-  const handleSideClick = async (side) => {
-    if (side.active_session_id) {
-      navigate(`/morgan/scanning/${side.active_session_id}`);
+  const handleShelfClick = async (shelf) => {
+    if (shelf.active_session_id) {
+      navigate(`/storage/scanning/${shelf.active_session_id}`);
       return;
     }
-    if (side.last_session_id) {
-      setRescanModal(side);
+    if (shelf.last_session_id) {
+      setRescanModal(shelf);
       return;
     }
-    setCreating(side.id);
+    setCreating(shelf.id);
     try {
-      const session = await api.createSession({ range_side_id: side.id });
-      navigate(`/morgan/scanning/${session.id}`);
+      const session = await api.createSession({ shelf_id: shelf.id });
+      navigate(`/storage/scanning/${session.id}`);
     } catch (e) {
       alert(e.message);
       setCreating(null);
     }
   };
 
-  const handleRescan = async (side) => {
+  const handleRescan = async (shelf) => {
     setRescanModal(null);
-    setCreating(side.id);
+    setCreating(shelf.id);
     try {
-      const session = await api.createSession({ range_side_id: side.id });
-      navigate(`/morgan/scanning/${session.id}`);
+      const session = await api.createSession({ shelf_id: shelf.id });
+      navigate(`/storage/scanning/${session.id}`);
     } catch (e) {
       alert(e.message);
       setCreating(null);
@@ -124,12 +119,10 @@ export default function Scanning() {
   return (
     <div>
       <div className="mb-6">
-        <div>
-          <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Scanning</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Select a floor, expand a range, then click a Morgan side to start or resume scanning.
-          </p>
-        </div>
+        <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Scanning</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Select a location — expand a range, then click a shelf to start or resume scanning.
+        </p>
       </div>
 
       {loadingFloors ? (
@@ -137,23 +130,24 @@ export default function Scanning() {
       ) : floors.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">🗺️</p>
-          <p className="text-sm">No Morgan floors found. Add floors in Data Entry first.</p>
+          <p className="text-sm">No floors found for Storage. Add floors in Data Entry first.</p>
         </div>
       ) : (
         <>
+          {/* Floor tabs */}
           <div className="flex gap-2 mb-5 flex-wrap">
-            {floors.map((floor) => (
+            {floors.map(f => (
               <button
-                key={floor.id}
-                onClick={() => setSelectedFloorId(floor.id)}
+                key={f.id}
+                onClick={() => setSelectedFloorId(f.id)}
                 className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                  selectedFloorId === floor.id
+                  selectedFloorId === f.id
                     ? "text-white border-transparent"
                     : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
                 }`}
-                style={selectedFloorId === floor.id ? { backgroundColor: "#1E4D2B" } : {}}
+                style={selectedFloorId === f.id ? { backgroundColor: "#1E4D2B" } : {}}
               >
-                {floor.display_name}
+                {f.display_name}
               </button>
             ))}
           </div>
@@ -168,7 +162,7 @@ export default function Scanning() {
           ) : (
             <>
               <div className="space-y-2">
-                {treeData.ranges.map((rng) => {
+                {treeData.ranges.map(rng => {
                   const { total, done } = rangeStats(rng);
                   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                   const isExpanded = expandedRanges.has(rng.id);
@@ -178,6 +172,7 @@ export default function Scanning() {
                       key={rng.id}
                       className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
                     >
+                      {/* Range header row */}
                       <button
                         onClick={() => toggleRange(rng.id)}
                         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
@@ -189,28 +184,14 @@ export default function Scanning() {
                           {rng.range_number}
                         </span>
 
-                        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                          {Array.isArray(rng.location_codes) && rng.location_codes.length > 0 && (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {rng.location_codes.map((code) => (
-                                <span
-                                  key={code}
-                                  className="text-[11px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0"
-                                >
-                                  {code}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                        {rng.material_type && (
+                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">
+                            {rng.material_type}
+                          </span>
+                        )}
 
-                          {rng.material_type && (
-                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">
-                              {rng.material_type}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex-1 flex items-center gap-2 min-w-0 max-w-sm">
+                        {/* Progress bar */}
+                        <div className="flex-1 flex items-center gap-2 min-w-0">
                           <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all"
@@ -230,54 +211,38 @@ export default function Scanning() {
                         </span>
                       </button>
 
+                      {/* Expanded: sides → ladders → shelves */}
                       {isExpanded && (
-                        <div className="border-t border-gray-100 px-5 py-4 space-y-3">
-                          {rng.sides.length === 0 ? (
-                            <p className="text-xs text-gray-400 italic">No sides defined for this range.</p>
-                          ) : (
-                            <div className="space-y-4">
-                              {rng.sides.map((side) => (
-                                <div key={side.id}>
-                                  <div className="flex items-center justify-between gap-3 mb-2">
-                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                                      Side {side.side_letter}
+                        <div className="border-t border-gray-100 px-5 py-4 space-y-4">
+                          {rng.sides.map(side => (
+                            <div key={side.id}>
+                              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                                Side {side.side_letter}
+                              </p>
+                              <div className="space-y-3">
+                                {side.ladders.map(ladder => (
+                                  <div key={ladder.id}>
+                                    <p className="text-xs text-gray-400 mb-1.5">
+                                      Ladder {ladder.ladder_number}
                                     </p>
-                                    <button
-                                      title={shelfTitle(side)}
-                                      onClick={() => handleSideClick(side)}
-                                      disabled={creating === side.id}
-                                      className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${shelfClasses(side, creating)}`}
-                                    >
-                                      {creating === side.id ? "Starting…" : side.session_count > 0 ? `${side.session_count} scan${side.session_count !== 1 ? "s" : ""}` : "Never scanned"}
-                                    </button>
+                                    <div className="flex flex-wrap gap-2">
+                                      {ladder.shelves.map(shelf => (
+                                        <button
+                                          key={shelf.id}
+                                          title={shelfTitle(shelf)}
+                                          onClick={() => handleShelfClick(shelf)}
+                                          disabled={creating === shelf.id}
+                                          className={`px-3 py-1.5 text-xs font-mono font-medium rounded-lg border transition-all ${shelfClasses(shelf, creating)}`}
+                                        >
+                                          {creating === shelf.id ? "…" : shelf.shelf_number}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
-
-                                  <div className="space-y-2">
-                                    {side.ladders.map((ladder) => (
-                                      <div key={ladder.id} className="flex items-start gap-3">
-                                        <span className="text-xs font-mono text-gray-400 w-16 shrink-0 pt-1.5">
-                                          Ldr {ladder.ladder_number}
-                                        </span>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {ladder.shelves.map((shelf) => (
-                                            <button
-                                              key={shelf.id}
-                                              title={shelfTitle(side)}
-                                              onClick={() => handleSideClick(side)}
-                                              disabled={creating === side.id}
-                                              className={`w-10 h-10 text-xs font-mono rounded-lg border transition-colors ${shelfClasses(side, creating)}`}
-                                            >
-                                              {shelf.shelf_number}
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
-                          )}
+                          ))}
                         </div>
                       )}
                     </div>
@@ -285,6 +250,7 @@ export default function Scanning() {
                 })}
               </div>
 
+              {/* Legend */}
               <div className="mt-4 flex gap-4 flex-wrap">
                 {[
                   { color: "bg-white border-gray-200", label: "Not scanned" },
@@ -303,12 +269,13 @@ export default function Scanning() {
         </>
       )}
 
+      {/* Rescan confirmation modal */}
       {rescanModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-base font-semibold text-gray-800 mb-2">Start a new scan?</h3>
             <p className="text-sm text-gray-500 mb-5">
-              Side <span className="font-mono font-medium">{rescanModal.side_letter}</span> has
+              Shelf <span className="font-mono font-medium">{rescanModal.shelf_number}</span> has
               already been scanned {rescanModal.session_count} time
               {rescanModal.session_count !== 1 ? "s" : ""}. Starting a new session won't delete the
               previous one.

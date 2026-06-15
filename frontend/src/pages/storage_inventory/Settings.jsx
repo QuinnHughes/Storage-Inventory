@@ -9,7 +9,7 @@ function ResolutionOptions() {
   const [name, setName]             = useState("");
   const [description, setDesc]      = useState("");
   const [saving, setSaving]         = useState(false);
-  const [confirmDelete, setConfirm] = useState(null); // option id pending delete
+  const [confirmDelete, setConfirm] = useState(null);
   const [error, setError]           = useState(null);
 
   const load = () => {
@@ -54,11 +54,10 @@ function ResolutionOptions() {
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
       <h2 className="text-base font-semibold text-gray-800 mb-1">Discrepancy Resolution Options</h2>
       <p className="text-xs text-gray-500 mb-5">
-        Define the outcomes that can be recorded when a discrepancy is resolved — e.g. what was done
-        with the item. These appear as a dropdown on the Discrepancies tab of each scan session.
+        Define the outcomes that can be recorded when a discrepancy is resolved. These appear as a
+        dropdown on the Discrepancies tab of each scan session.
       </p>
 
-      {/* Add form */}
       <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-5">
         <input
           value={name}
@@ -108,26 +107,22 @@ function ResolutionOptions() {
               {options.map((opt, i) => (
                 <tr key={opt.id} className={`border-t border-gray-100 ${i % 2 === 1 ? "bg-gray-50" : ""}`}>
                   <td className="px-4 py-2.5 font-medium text-gray-800">{opt.name}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{opt.description ?? <span className="italic text-gray-300">—</span>}</td>
+                  <td className="px-4 py-2.5 text-gray-500">
+                    {opt.description ?? <span className="italic text-gray-300">—</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right">
                     {confirmDelete === opt.id ? (
                       <span className="inline-flex gap-1 items-center">
                         <span className="text-xs text-gray-500 mr-1">Delete?</span>
-                        <button
-                          onClick={() => handleDelete(opt.id)}
-                          className="text-xs text-red-600 hover:text-red-800 font-medium"
-                        >Yes</button>
+                        <button onClick={() => handleDelete(opt.id)}
+                          className="text-xs text-red-600 hover:text-red-800 font-medium">Yes</button>
                         <span className="text-gray-300">·</span>
-                        <button
-                          onClick={() => setConfirm(null)}
-                          className="text-xs text-gray-400 hover:text-gray-700"
-                        >No</button>
+                        <button onClick={() => setConfirm(null)}
+                          className="text-xs text-gray-400 hover:text-gray-700">No</button>
                       </span>
                     ) : (
-                      <button
-                        onClick={() => setConfirm(opt.id)}
-                        className="text-xs text-gray-300 hover:text-red-500 transition-colors"
-                      >
+                      <button onClick={() => setConfirm(opt.id)}
+                        className="text-xs text-gray-300 hover:text-red-500 transition-colors">
                         Delete
                       </button>
                     )}
@@ -150,7 +145,7 @@ export default function Settings() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold" style={{ color: "#1E4D2B" }}>Settings</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Configure Morgan Inventory options.
+          Configure Storage Inventory options.
         </p>
       </div>
 

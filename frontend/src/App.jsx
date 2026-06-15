@@ -5,7 +5,6 @@ import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import Upload from "./pages/analytics/Upload";
 import Records from "./pages/analytics/Records";
-import Jobs from "./pages/analytics/Jobs";
 import Mapping from "./pages/Mapping";
 import DataEntry from "./pages/mapping/DataEntry";
 import RangeList from "./pages/mapping/RangeList";
@@ -13,8 +12,16 @@ import ViewMap from "./pages/mapping/ViewMap";
 import MapEditor from "./pages/mapping/MapEditor";
 import Locations from "./pages/mapping/Locations";
 import MorganInventory from "./pages/MorganInventory";
+import StorageInventory from "./pages/StorageInventory";
 import Scanning from "./pages/morgan_inventory/Scanning";
 import ScanSessionDetail from "./pages/morgan_inventory/ScanSessionDetail";
+import MorganSettings from "./pages/morgan_inventory/Settings";
+import MorganOverview from "./pages/morgan_inventory/Overview";
+import StorageScanning from "./pages/storage_inventory/Scanning";
+import StorageScanSessionDetail from "./pages/storage_inventory/ScanSessionDetail";
+import StorageOverview from "./pages/storage_inventory/Overview";
+import StorageSettings from "./pages/storage_inventory/Settings";
+import RangeEdit from "./pages/mapping/RangeEdit";
 
 export default function App() {
   return (
@@ -25,16 +32,22 @@ export default function App() {
           <Route path="analytics" element={<Analytics />} />
           <Route path="analytics/upload" element={<Upload />} />
           <Route path="analytics/records" element={<Records />} />
-          <Route path="analytics/jobs" element={<Jobs />} />
           <Route path="mapping" element={<Mapping />} />
           <Route path="mapping/data-entry" element={<DataEntry />} />
           <Route path="mapping/ranges" element={<RangeList />} />
           <Route path="mapping/view" element={<ViewMap />} />
           <Route path="mapping/editor" element={<MapEditor />} />
           <Route path="mapping/locations" element={<Locations />} />
+          <Route path="storage" element={<StorageInventory />} />
+          <Route path="storage/scanning" element={<StorageScanning />} />
+          <Route path="storage/scanning/:id" element={<StorageScanSessionDetail />} />
+          <Route path="storage/overview" element={<StorageOverview />} />
+          <Route path="storage/settings" element={<StorageSettings />} />
           <Route path="morgan" element={<MorganInventory />} />
           <Route path="morgan/scanning" element={<Scanning />} />
           <Route path="morgan/scanning/:id" element={<ScanSessionDetail />} />
+          <Route path="morgan/overview" element={<MorganOverview />} />
+          <Route path="morgan/settings" element={<MorganSettings />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -160,6 +160,7 @@ class MetaOut(BaseModel):
     statuses: list[str]
     lifecycles: list[str]
     collections: list[dict]
+    total_records: int
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -306,6 +307,7 @@ def get_meta(db: Session = Depends(get_db)):
         statuses=distinct_vals(models.IlsRecord.status),
         lifecycles=distinct_vals(models.IlsRecord.lifecycle),
         collections=collections,
+        total_records=db.query(models.IlsRecord).count(),
     )
 
 

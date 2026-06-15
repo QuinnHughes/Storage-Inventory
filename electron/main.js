@@ -2,6 +2,7 @@ const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const http = require("http");
+const fs = require("fs");
 
 const BACKEND_PORT = 8765;
 const DEV_MODE = process.env.NODE_ENV === "development" || !app.isPackaged;
@@ -22,7 +23,7 @@ function getBackendPath() {
 
 function startBackend() {
   if (DEV_MODE) {
-    // In dev the developer runs `npm run dev:backend` separately
+    // In dev run `npm run dev:backend` separately
     console.log("[electron] Dev mode — expecting backend on :" + BACKEND_PORT);
     return;
   }
@@ -83,7 +84,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "Storage Inventory",
-    icon: path.join(__dirname, "icon.ico"),
+    icon: (() => { const p = path.join(__dirname, "icon.ico"); return fs.existsSync(p) ? p : undefined; })(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
