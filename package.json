@@ -1,6 +1,8 @@
 {
   "name": "storage-inventory",
   "version": "1.0.0",
+  "description": "Electron desktop app for physical storage and inventory management.",
+  "author": "Storage Inventory Team <info@example.com>",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -8,13 +10,14 @@
     "dev:backend": "cd backend && python main.py",
     "electron:dev": "electron .",
     "build:frontend": "cd frontend && npm run build",
-    "build:backend": "python -m PyInstaller --distpath backend_dist --noconfirm StorageInventory.spec",
+    "build:backend": "backend/.venv/bin/python3 -m PyInstaller --distpath backend_dist --noconfirm StorageInventory.spec",
     "build": "npm run build:frontend && npm run build:backend && electron-builder",
-    "install:backend": "pip install -r backend/requirements.txt"
+    "install:backend": "backend/.venv/bin/python3 -m pip install -r backend/requirements.txt"
   },
   "build": {
     "appId": "com.storage.inventory",
     "productName": "Storage Inventory",
+    "icon": "frontend/public/fish.svg",
     "directories": {
       "output": "dist-electron"
     },
@@ -27,9 +30,15 @@
       {
         "from": "backend_dist/",
         "to": "backend_dist/",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
+    "linux": {
+      "category": "Utility",
+      "icon": "frontend/public/fish.svg"
+    },
     "win": {
       "target": "nsis",
       "icon": "electron/icon.ico"
@@ -43,6 +52,11 @@
   },
   "devDependencies": {
     "electron": "^34.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.1.8",
+    "vite": "^8.0.16"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.1",
+    "tailwindcss": "^4.3.1"
   }
 }

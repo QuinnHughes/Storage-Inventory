@@ -13,12 +13,12 @@ let backendProcess = null;
 // ── Backend process ───────────────────────────────────────────────────────────
 
 function getBackendPath() {
-  if (app.isPackaged) {
-    // Bundled executable inside the installed app via extraResources
-    return path.join(process.resourcesPath, "backend_dist", "main", "main.exe");
+  if (!app.isPackaged) {
+    return null;
   }
-  // Development: run Python directly
-  return null;
+
+  const exeName = process.platform === "win32" ? "main.exe" : "main";
+  return path.join(process.resourcesPath, "backend_dist", "main", exeName);
 }
 
 function startBackend() {
