@@ -27,6 +27,7 @@ from api import (
     collections as collections_router,
     analytics as analytics_router,
     scanning as scanning_router,
+    accessioning as accessioning_router,
 )
 from db.session import create_tables
 
@@ -47,6 +48,7 @@ app.include_router(mapping_router.router,      prefix="/api/mapping",      tags=
 app.include_router(collections_router.router,  prefix="/api/collections",  tags=["collections"])
 app.include_router(analytics_router.router,    prefix="/api/analytics",    tags=["analytics"])
 app.include_router(scanning_router.router,     prefix="/api/scanning",     tags=["scanning"])
+app.include_router(accessioning_router.router, prefix="/api",            tags=["accessioning"])
 
 
 @app.get("/api/health")

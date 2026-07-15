@@ -1,18 +1,66 @@
 ﻿// Central API helper – all requests go to /api (proxied to :8765 in dev)
 const BASE = "/api";
 
+async function parseResponse(res) {
+  const contentType = res.headers.get("content-type") || "";
+  const rawText = await res.text();
+
+  if (!rawText) {
+    return null;
+  }
+
+  if (contentType.includes("application/json") || rawText.trim().startsWith("{" ) || rawText.trim().startsWith("[")) {
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      return rawText;
+    }
+  }
+
+  return rawText;
+}
+
 async function request(method, path, body = null) {
   const opts = {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers: {},
   };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE}${path}`, opts);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
+  if (body !== undefined && body !== null) {
+    opts.headers = { "Content-Type": "application/json" };
+    opts.body = typeof body === "string" ? body : JSON.stringify(body);
   }
-  return res.json();
+  const res = await fetch(`${BASE}${path}`, opts);
+  const data = await parseResponse(res);
+  if (!res.ok) {
+    const detail = typeof data === "string"
+      ? data
+      : data?.detail || data?.message || res.statusText;
+    throw new Error(detail || res.statusText);
+  }
+  return data;
+}
+
+export async function apiFetch(path, options = {}) {
+  const method = options.method || "GET";
+  const headers = options.headers || {};
+  const body = options.body ?? null;
+  const opts = { method, headers };
+
+  if (body !== undefined && body !== null) {
+    opts.headers = { "Content-Type": "application/json", ...headers };
+    opts.body = typeof body === "string" ? body : JSON.stringify(body);
+  }
+
+  const res = await fetch(`${BASE}${path}`, opts);
+  const data = await parseResponse(res);
+  if (!res.ok) {
+    const detail = typeof data === "string"
+      ? data
+      : data?.detail || data?.message || res.statusText;
+    throw new Error(detail || res.statusText);
+  }
+
+  return data;
 }
 
 export const api = {

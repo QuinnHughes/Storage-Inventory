@@ -8,25 +8,25 @@ const BASE_CARDS = [
     title: "View Map",
     description: "Browse floor-by-floor visual plans of the facility.",
     to: "/mapping/view",
-    icon: "🗺",
+    icon: "🦈",
   },
   {
     title: "Data Entry",
     description: "Enter the physical structure — ranges, sides, ladders, and shelves.",
     to: "/mapping/data-entry",
-    icon: "📋",
+    icon: "🦐",
   },
   {
     title: "Range List",
     description: "View, edit, or delete previously entered ranges by floor.",
     to: "/mapping/ranges",
-    icon: "📂",
+    icon: "🐟",
   },
   {
     title: "Map Editor",
     description: "Build an interactive top-down floor plan with scaled, snappable range shapes.",
     to: "/mapping/editor",
-    icon: "✏️",
+    icon: "🐠",
   },
 ];
 
@@ -35,7 +35,7 @@ const LOCATIONS_CARD = {
   description:
     "Manage Morgan Library location codes. Add custom codes for areas that contain items from multiple Alma locations.",
   to: "/mapping/locations",
-  icon: "🏷️",
+  icon: "🐬",
 };
 
 const DESCRIPTIONS = {
@@ -93,9 +93,11 @@ export default function Mapping() {
             onClick={() => navigate(card.to)}
             className="text-left rounded-2xl border border-gray-200 bg-white hover:border-green-700 hover:shadow-lg cursor-pointer p-7 shadow-sm transition-all group"
           >
-            <div className="text-3xl mb-4">{card.icon}</div>
-            <div className="text-lg font-bold text-gray-800 mb-2 group-hover:text-green-800 transition-colors">
-              {card.title}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl leading-none" aria-hidden="true">{card.icon}</span>
+              <div className="text-lg font-bold text-gray-800 group-hover:text-green-800 transition-colors">
+                {card.title}
+              </div>
             </div>
             <p className="text-sm text-gray-500 leading-relaxed">{card.description}</p>
           </button>

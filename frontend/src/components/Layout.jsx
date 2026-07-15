@@ -9,6 +9,7 @@ const nav = [
   { to: "/morgan",    label: "Morgan Inventory" },
   { to: "/storage",   label: "Storage Inventory" },
   { to: "/mapping",   label: "Mapping" },
+  { to: "/accessioning", label: "Accessioning" },
   { to: "/settings",  label: "Settings" },
 ];
 

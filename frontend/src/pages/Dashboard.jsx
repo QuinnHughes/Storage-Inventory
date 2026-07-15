@@ -114,15 +114,18 @@ function FacilityCard({ title, subtitle, to, data, loading }) {
   );
 }
 
-function QuickLink({ label, desc, to }) {
+function QuickLink({ label, desc, to, icon }) {
   const navigate = useNavigate();
   return (
     <button
       onClick={() => navigate(to)}
       className="text-left w-full bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 hover:border-green-700 transition-colors group"
     >
-      <div className="text-sm font-semibold text-gray-700 group-hover:text-green-800">{label}</div>
-      <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
+      <div className="flex items-center gap-2">
+        <span className="text-xl leading-none" aria-hidden="true">{icon}</span>
+        <div className="text-sm font-semibold text-gray-700 group-hover:text-green-800">{label}</div>
+      </div>
+      <div className="text-xs text-gray-400 mt-1">{desc}</div>
     </button>
   );
 }
@@ -212,12 +215,11 @@ export default function Dashboard() {
       <div className="mb-2">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Quick Links</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <QuickLink to="/morgan/scanning"   label="Morgan Scanning"    desc="Start or resume a shelf scan" />
-          <QuickLink to="/storage/scanning"  label="Storage Scanning"   desc="Start or resume a shelf scan" />
-          <QuickLink to="/morgan/overview"   label="Morgan Overview"    desc="Coverage and discrepancy stats" />
-          <QuickLink to="/storage/overview"  label="Storage Overview"   desc="Coverage and discrepancy stats" />
-          <QuickLink to="/analytics/records" label="ILS Records"        desc="Search the analytics record set" />
-          <QuickLink to="/mapping"           label="Mapping"            desc="Floors, ranges, and shelf layout" />
+          <QuickLink to="/morgan"   label="Morgan Inventory"    desc="Coverage and discrepancy stats" icon="🦜" />
+          <QuickLink to="/storage"  label="Storage Inventory"   desc="Coverage and discrepancy stats" icon="🦍" />
+          <QuickLink to="/analytics/records" label="ILS Records"        desc="Search the analytics record set" icon="🐫" />
+          <QuickLink to="/mapping"           label="Mapping"            desc="Floors, ranges, and shelf layout" icon="🦐" />
+          <QuickLink to="/accessioning"      label="Accessioning"       desc="Manage accessioning projects" icon="🐢" />
         </div>
       </div>
     </div>

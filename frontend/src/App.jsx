@@ -22,6 +22,11 @@ import StorageScanSessionDetail from "./pages/storage_inventory/ScanSessionDetai
 import StorageOverview from "./pages/storage_inventory/Overview";
 import StorageSettings from "./pages/storage_inventory/Settings";
 import RangeEdit from "./pages/mapping/RangeEdit";
+import Accessioning from "./pages/Accessioning";
+import Projects from "./pages/accessioning/Projects";
+import BatchPrint from "./pages/accessioning/BatchPrinting";
+import Accession from "./pages/accessioning/Acccession";
+import EmptyShelves from "./pages/accessioning/EmptyShelves";
 
 export default function App() {
   return (
@@ -48,6 +53,11 @@ export default function App() {
           <Route path="morgan/scanning/:id" element={<ScanSessionDetail />} />
           <Route path="morgan/overview" element={<MorganOverview />} />
           <Route path="morgan/settings" element={<MorganSettings />} />
+          <Route path="accessioning" element={<Accessioning />} />
+          <Route path="accessioning/projects" element={<Projects />} />
+          <Route path="accessioning/batch-print" element={<BatchPrint/>} />
+          <Route path="accessioning/accession" element={<Accession />} />
+          <Route path="accessioning/empty-shelves" element={<EmptyShelves />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

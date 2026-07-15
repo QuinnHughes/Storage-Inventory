@@ -6,7 +6,7 @@ const cards = [
     description:
       "Select shelves by location to scan or upload barcodes to inventory. Then run analysis to find and fix discrepancies.",
     to: "/storage/scanning",
-    icon: "📚",
+    icon: "🦍",
     ready: true,
   },
   {
@@ -14,7 +14,7 @@ const cards = [
     description:
       "Coverage stats, discrepancy analysis, and measurement totals across Storage's locations — filter by location code to drill into any area.",
     to: "/storage/overview",
-    icon: "📊",
+    icon: "🐒",
     ready: true,
   },
   {
@@ -22,7 +22,7 @@ const cards = [
     description:
       "Configure Storage-specific options: location codes, expected call-number ranges per range/section, and analysis thresholds.",
     to: "/storage/settings",
-    icon: "⚙️",
+    icon: "🦧",
     ready: true,
   },
 ];
@@ -50,8 +50,8 @@ export default function StorageInventory() {
                 : "border-gray-100 opacity-50 cursor-not-allowed"
               }`}
           >
-            <div className="text-3xl mb-4">{card.icon}</div>
             <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl leading-none" aria-hidden="true">{card.icon}</span>
               <span className={`text-lg font-bold text-gray-800 transition-colors ${card.ready ? "group-hover:text-green-800" : ""}`}>
                 {card.title}
               </span>

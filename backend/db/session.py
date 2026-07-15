@@ -39,6 +39,14 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def initialize_database():
+    """Initialize the engine and session factory for the accessioning API."""
+    engine = _get_engine()
+    if engine is None or _SessionLocal is None:
+        raise RuntimeError("Database not configured. Please set the connection URL in Settings.")
+    return engine, _SessionLocal
+
+
 def create_tables() -> None:
     """Create all tables if they do not already exist, and add any missing columns."""
     engine = _get_engine()

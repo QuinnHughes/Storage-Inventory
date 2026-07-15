@@ -5,13 +5,13 @@ const cards = [
     title: "Upload",
     description: "Import Alma analytics exports (CSV or Excel). Records are upserted by barcode and automatically routed to the correct collection by location code.",
     to: "/analytics/upload",
-    icon: "📤",
+    icon: "🐫",
   },
   {
     title: "Records",
     description: "Search every imported ILS record by any field. Filter by collection, location, status, or lifecycle. Edit individual records in-place.",
     to: "/analytics/records",
-    icon: "🔍",
+    icon: "🦙",
   },
 
 ];
@@ -33,9 +33,11 @@ export default function Analytics() {
             onClick={() => navigate(card.to)}
             className="text-left rounded-2xl border border-gray-200 bg-white hover:border-green-700 hover:shadow-lg cursor-pointer p-7 shadow-sm transition-all group"
           >
-            <div className="text-3xl mb-4">{card.icon}</div>
-            <div className="text-lg font-bold text-gray-800 mb-2 group-hover:text-green-800 transition-colors">
-              {card.title}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl leading-none" aria-hidden="true">{card.icon}</span>
+              <div className="text-lg font-bold text-gray-800 group-hover:text-green-800 transition-colors">
+                {card.title}
+              </div>
             </div>
             <p className="text-sm text-gray-500 leading-relaxed">{card.description}</p>
           </button>

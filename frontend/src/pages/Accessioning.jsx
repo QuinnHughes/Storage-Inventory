@@ -1,42 +1,47 @@
 import { useNavigate } from "react-router-dom";
 
-const cards = [
+const BASE_CARDS = [
   {
-    title: "Shelf Scanning",
-    description:
-      "Select shelves by location to scan or upload barcodes to inventory. Then run analysis to find and fix discrepancies.",
-    to: "/morgan/scanning",
-    icon: "🦜",
+    title: "Projects",
+    description: "View and manage accessioning projects.",
+    to: "/accessioning/projects",
+    icon: "🐢",
     ready: true,
   },
   {
-    title: "Inventory Overview",
-    description:
-      "Coverage stats, discrepancy analysis, and measurement totals across Morgan's locations — filter by Alma location code to drill into any area.",
-    to: "/morgan/overview",
-    icon: "🐧",
+    title: "Batch Printing",
+    description: "Print batch labels for accessioning.",
+    to: "/accessioning/batch-print",
+    icon: "🐊",
     ready: true,
   },
   {
-    title: "Settings",
-    description:
-      "Configure Morgan-specific options: location codes, expected call-number ranges per range/section, and analysis thresholds.",
-    to: "/morgan/settings",
-    icon: "🦆",
+    title: "Empty Shelves",
+    description: "Enter and view empty shelves for accessioning.",
+    to: "/accessioning/empty-shelves",
+    icon: "🦎",
+    ready: true,
+  },
+  {
+    title: "Accessioning",
+    description: "Accession empty shelves and print extra labels for accessioning.",
+    to: "/accessioning/accession",
+    icon: "🐸",
     ready: true,
   },
 ];
 
-export default function MorganInventory() {
+export default function Accessioning() {
   const navigate = useNavigate();
+  const cards = BASE_CARDS;
 
   return (
     <div>
       <h1 className="text-3xl font-bold mb-2" style={{ color: "#1E4D2B" }}>
-        Morgan Inventory
+        Accessioning
       </h1>
       <p className="text-base text-gray-500 mb-10">
-        Tools for performing inventories at Morgan Library.
+        Tools for accessioning and projects
       </p>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -50,8 +55,10 @@ export default function MorganInventory() {
                 : "border-gray-100 opacity-50 cursor-not-allowed"
               }`}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl leading-none" aria-hidden="true">{card.icon}</span>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl leading-none" aria-hidden="true">
+                {card.icon}
+              </span>
               <span className={`text-lg font-bold text-gray-800 transition-colors ${card.ready ? "group-hover:text-green-800" : ""}`}>
                 {card.title}
               </span>
