@@ -1,125 +1,43 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 
-const DEFAULT = { user: "", password: "", host: "localhost", port: "5432", dbname: "storage_inventory" };
-
-function buildUrl({ user, password, host, port, dbname }) {
-  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${dbname}`;
-}
-
 export default function Settings() {
-  const [fields, setFields] = useState(DEFAULT);
-  const [masked, setMasked] = useState("");
-  const [status, setStatus] = useState(null); // null | "saving" | "ok" | "error"
-  const [msg, setMsg] = useState("");
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
+  const [status, setStatus] = useState("loading");
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    api.getSettings().then((s) => {
-      if (s.configured) setMasked(s.url_masked ?? "");
-    });
+    api.getSettings()
+      .then((s) => {
+        setStatus(s.configured ? "configured" : "missing");
+        setMessage(s.message || "");
+      })
+      .catch((e) => {
+        setStatus("error");
+        setMessage(e.message);
+      });
   }, []);
-
-  const set = (key) => (e) => setFields((p) => ({ ...p, [key]: e.target.value }));
-
-  const valid = fields.user.trim() && fields.password.trim() && fields.host.trim() && fields.port.trim() && fields.dbname.trim();
-
-  const handleSave = async () => {
-    if (!valid) return;
-    setStatus("saving");
-    setMsg("");
-    setTestResult(null);
-    try {
-      const url = buildUrl(fields);
-      await api.saveSettings(url);
-      setStatus("ok");
-      setMsg("Connection saved and database tables initialised.");
-      setMasked(`postgresql://${fields.user}:***@${fields.host}:${fields.port}/${fields.dbname}`);
-      setFields((p) => ({ ...p, password: "" }));
-    } catch (e) {
-      setStatus("error");
-      setMsg(e.message);
-    }
-  };
-
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const r = await api.health();
-      setTestResult(r.db ? "ok" : "fail");
-    } catch {
-      setTestResult("fail");
-    } finally {
-      setTesting(false);
-    }
-  };
 
   return (
     <div className="max-w-3xl space-y-10">
-      <div>
-        <h1 className="text-2xl font-bold mb-2" style={{ color: "#1E4D2B" }}>Database Connection</h1>
-      <p className="text-sm text-gray-500 mb-6">Enter your PostgreSQL server details below.</p>
-
-      {masked && (
-        <div className="mb-5 bg-white rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-600">
-          <span className="font-medium text-gray-700">Current connection: </span>
-          <span className="font-mono">{masked}</span>
-        </div>
-      )}
-
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 space-y-4">
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Postgres User" id="user" value={fields.user} onChange={set("user")} placeholder="quinnjh" />
-          <Field label="Password" id="password" type="password" value={fields.password} onChange={set("password")} placeholder="••••••••" />
-        </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-2">
-            <Field label="Host / IP Address" id="host" value={fields.host} onChange={set("host")} placeholder="10.2.30.91" />
-          </div>
-          <Field label="Port" id="port" value={fields.port} onChange={set("port")} placeholder="5432" />
-        </div>
-
-        <Field label="Database Name" id="dbname" value={fields.dbname} onChange={set("dbname")} placeholder="storage_inventory" />
-
-        <div className="pt-1 text-xs text-gray-400 font-mono bg-gray-50 rounded px-3 py-2 border border-gray-100">
-          {fields.user || "<user>"}:***@{fields.host || "<host>"}:{fields.port || "5432"}/{fields.dbname || "<dbname>"}
-        </div>
-
-        {msg && (
-          <p className={`text-sm ${status === "ok" ? "text-green-700" : "text-red-600"}`}>{msg}</p>
-        )}
-
-        {testResult && (
-          <p className={`text-sm font-medium ${testResult === "ok" ? "text-green-700" : "text-red-600"}`}>
-            {testResult === "ok" ? "✓ Database reachable" : "✗ Could not reach database — check your details"}
+        <div className={`rounded-lg border px-4 py-3 text-sm ${
+          status === "configured"
+            ? "border-green-200 bg-green-50 text-green-700"
+            : status === "missing"
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-red-200 bg-red-50 text-red-600"
+        }`}>
+          <p className="font-medium">
+            {status === "configured"
+              ? "Database configuration detected"
+              : status === "missing"
+                ? "Database configuration pending"
+                : "Unable to read configuration"}
           </p>
-        )}
-
-        <div className="flex gap-3 pt-2">
-          <button
-            onClick={handleSave}
-            disabled={!valid || status === "saving"}
-            className="px-5 py-2 text-sm font-semibold rounded text-white disabled:opacity-40 transition-colors"
-            style={{ background: "#1E4D2B" }}
-            onMouseOver={(e) => e.currentTarget.style.background = "#174023"}
-            onMouseOut={(e) => e.currentTarget.style.background = "#1E4D2B"}
-          >
-            {status === "saving" ? "Connecting…" : "Save & Connect"}
-          </button>
-          <button
-            onClick={handleTest}
-            disabled={testing}
-            className="px-5 py-2 text-sm font-medium rounded border transition-colors"
-            style={{ borderColor: "#1E4D2B", color: "#1E4D2B" }}
-          >
-            {testing ? "Testing…" : "Test Connection"}
-          </button>
+          <p className="mt-1"></p>
         </div>
-      </div>
       </div>
 
       <CollectionsManager />
@@ -426,21 +344,4 @@ function LocationForm({ form, setF, saving, error, onSave, onCancel }) {
   );
 }
 
-function Field({ label, id, value, onChange, placeholder, type = "text" }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-gray-700">{label}</label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        autoComplete={type === "password" ? "current-password" : "off"}
-        className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2"
-        style={{ "--tw-ring-color": "#1E4D2B" }}
-      />
-    </div>
-  );
-}
 

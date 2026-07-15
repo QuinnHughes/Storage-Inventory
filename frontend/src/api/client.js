@@ -69,7 +69,6 @@ export const api = {
 
   // Settings
   getSettings: () => request("GET", "/settings"),
-  saveSettings: (database_url) => request("PUT", "/settings", { database_url }),
 
   // Mapping — floors
   getFloors: (facility) => request("GET", facility ? `/mapping/floors?facility=${facility}` : "/mapping/floors"),

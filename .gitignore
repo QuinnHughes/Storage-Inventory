@@ -26,6 +26,9 @@ node_modules/
 # Database / config
 *.dump
 config.ini
+.env
+.env.*
+!.env.example
 
 # IDE
 .vscode/

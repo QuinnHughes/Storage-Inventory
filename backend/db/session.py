@@ -31,7 +31,7 @@ def _get_engine():
 def get_db() -> Generator[Session, None, None]:
     engine = _get_engine()
     if engine is None or _SessionLocal is None:
-        raise RuntimeError("Database not configured. Please set the connection URL in Settings.")
+        raise RuntimeError("Database not configured. Please set DATABASE_URL in backend/.env or the server environment.")
     db = _SessionLocal()
     try:
         yield db
@@ -43,7 +43,7 @@ def initialize_database():
     """Initialize the engine and session factory for the accessioning API."""
     engine = _get_engine()
     if engine is None or _SessionLocal is None:
-        raise RuntimeError("Database not configured. Please set the connection URL in Settings.")
+        raise RuntimeError("Database not configured. Please set DATABASE_URL in backend/.env or the server environment.")
     return engine, _SessionLocal
 
 

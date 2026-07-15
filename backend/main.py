@@ -1,11 +1,11 @@
 """
 Storage Inventory – FastAPI application entry point.
 
-In production (installed via PyInstaller) this module:
-  1. Reads the DB URL from %APPDATA%/StorageInventory/config.ini
+In production this module:
+  1. Reads the DB URL from the process environment or backend/.env
   2. Creates/migrates tables
   3. Serves the React build from frontend/dist/ as static files
-  4. Opens the browser automatically
+  4. Opens the browser automatically when launched locally
 
 In development the API is served on port 8765 while Vite runs on 5173.
 """

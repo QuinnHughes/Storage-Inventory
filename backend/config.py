@@ -1,40 +1,46 @@
 """
-Reads the PostgreSQL connection URL from:
-  1. %APPDATA%\\StorageInventory\\config.ini  (installed app)
-  2. Environment variable DATABASE_URL         (dev override)
+Reads the PostgreSQL connection URL from environment variables or a backend .env file.
+
+Priority:
+1. Environment variable DATABASE_URL
+2. backend/.env
+3. project-root .env
 """
-import configparser
 import os
 from pathlib import Path
 
 
-CONFIG_DIR  = Path(os.environ.get("APPDATA", Path.home())) / "StorageInventory"
-CONFIG_FILE = CONFIG_DIR / "config.ini"
+def _load_env_file() -> None:
+    """Populate os.environ from a backend or project-root .env file if present."""
+    candidates = [
+        Path(__file__).resolve().parent / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+    ]
+    for env_path in candidates:
+        if not env_path.exists():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+        break
+
+
+_load_env_file()
 
 
 def get_database_url() -> str | None:
     """Return the DATABASE_URL string, or None if not yet configured."""
-    # Dev override
-    env_url = os.environ.get("DATABASE_URL")
-    if env_url:
-        return env_url
-
-    if CONFIG_FILE.exists():
-        cfg = configparser.ConfigParser()
-        cfg.read(CONFIG_FILE)
-        return cfg.get("database", "url", fallback=None)
-
-    return None
+    return os.environ.get("DATABASE_URL")
 
 
 def save_database_url(url: str) -> None:
-    """Persist a DATABASE_URL to config.ini."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    cfg = configparser.ConfigParser()
-    if CONFIG_FILE.exists():
-        cfg.read(CONFIG_FILE)
-    if "database" not in cfg:
-        cfg["database"] = {}
-    cfg["database"]["url"] = url
-    with open(CONFIG_FILE, "w") as f:
-        cfg.write(f)
+    """Persist DATABASE_URL to backend/.env for server-side configuration."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    env_path.write_text(f"DATABASE_URL={url}\n", encoding="utf-8")
+    os.environ["DATABASE_URL"] = url
