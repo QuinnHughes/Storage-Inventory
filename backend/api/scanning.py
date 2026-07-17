@@ -64,13 +64,25 @@ def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
             for rng in ranges
             for side in rng.sides
         ]
+        shelf_ids = [
+            shelf.id
+            for rng in ranges
+            for side in rng.sides
+            for ladder in side.ladders
+            for shelf in ladder.shelves
+        ]
 
-        stats: dict = {}
-        last_status: dict[int, str] = {}
-        active_session_map: dict[int, int] = {}
+        side_stats: dict[int, object] = {}
+        shelf_stats: dict[int, object] = {}
+        side_last_status: dict[int, str] = {}
+        shelf_last_status: dict[int, str] = {}
+        side_active_session_map: dict[int, int] = {}
+        shelf_active_session_map: dict[int, int] = {}
+        side_last_session_map: dict[int, int] = {}
+        shelf_last_session_map: dict[int, int] = {}
 
         if side_ids:
-            stats_rows = (
+            side_stats_rows = (
                 db.query(
                     models.ScanSession.range_side_id,
                     sa_func.count(models.ScanSession.id).label("session_count"),
@@ -80,9 +92,9 @@ def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
                 .group_by(models.ScanSession.range_side_id)
                 .all()
             )
-            stats = {row.range_side_id: row for row in stats_rows}
+            side_stats = {row.range_side_id: row for row in side_stats_rows}
 
-            all_sessions = (
+            side_sessions = (
                 db.query(
                     models.ScanSession.range_side_id,
                     models.ScanSession.id,
@@ -92,35 +104,69 @@ def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
                 .order_by(models.ScanSession.range_side_id, models.ScanSession.created_at.desc())
                 .all()
             )
-            last_session_map: dict[int, int] = {}
-            seen: set[int] = set()
-            for row in all_sessions:
-                if row.range_side_id not in seen:
-                    seen.add(row.range_side_id)
-                    last_status[row.range_side_id] = row.status
-                    last_session_map[row.range_side_id] = row.id
-                if row.status == "scanning" and row.range_side_id not in active_session_map:
-                    active_session_map[row.range_side_id] = row.id
+            side_seen: set[int] = set()
+            for row in side_sessions:
+                if row.range_side_id not in side_seen:
+                    side_seen.add(row.range_side_id)
+                    side_last_status[row.range_side_id] = row.status
+                    side_last_session_map[row.range_side_id] = row.id
+                if row.status == "scanning" and row.range_side_id not in side_active_session_map:
+                    side_active_session_map[row.range_side_id] = row.id
+
+        if shelf_ids:
+            shelf_stats_rows = (
+                db.query(
+                    models.ScanSession.shelf_id,
+                    sa_func.count(models.ScanSession.id).label("session_count"),
+                    sa_func.max(models.ScanSession.created_at).label("last_scanned_at"),
+                )
+                .filter(models.ScanSession.shelf_id.in_(shelf_ids))
+                .group_by(models.ScanSession.shelf_id)
+                .all()
+            )
+            shelf_stats = {row.shelf_id: row for row in shelf_stats_rows if row.shelf_id is not None}
+
+            shelf_sessions = (
+                db.query(
+                    models.ScanSession.shelf_id,
+                    models.ScanSession.id,
+                    models.ScanSession.status,
+                )
+                .filter(models.ScanSession.shelf_id.in_(shelf_ids))
+                .order_by(models.ScanSession.shelf_id, models.ScanSession.created_at.desc())
+                .all()
+            )
+            shelf_seen: set[int] = set()
+            for row in shelf_sessions:
+                if row.shelf_id is None:
+                    continue
+                if row.shelf_id not in shelf_seen:
+                    shelf_seen.add(row.shelf_id)
+                    shelf_last_status[row.shelf_id] = row.status
+                    shelf_last_session_map[row.shelf_id] = row.id
+                if row.status == "scanning" and row.shelf_id not in shelf_active_session_map:
+                    shelf_active_session_map[row.shelf_id] = row.id
 
         ranges_out = []
         for rng in ranges:
             codes = [c.strip() for c in (rng.location_codes or "").split(",") if c.strip()]
             sides_out = []
             for side in sorted(rng.sides, key=lambda s: s.side_letter):
-                st = stats.get(side.id)
+                st = side_stats.get(side.id)
                 ladders_out = []
                 for ladder in sorted(side.ladders, key=lambda l: l.ladder_number):
                     shelves_out = []
                     for shelf in sorted(ladder.shelves, key=lambda s: s.shelf_number):
+                        shelf_st = shelf_stats.get(shelf.id)
                         shelves_out.append({
                             "id": shelf.id,
                             "side_id": side.id,
                             "shelf_number": shelf.shelf_number,
-                            "session_count": st.session_count if st else 0,
-                            "last_scanned_at": st.last_scanned_at.isoformat() if (st and st.last_scanned_at) else None,
-                            "last_status": last_status.get(side.id),
-                            "active_session_id": active_session_map.get(side.id),
-                            "last_session_id": last_session_map.get(side.id),
+                            "session_count": shelf_st.session_count if shelf_st else 0,
+                            "last_scanned_at": shelf_st.last_scanned_at.isoformat() if (shelf_st and shelf_st.last_scanned_at) else None,
+                            "last_status": shelf_last_status.get(shelf.id),
+                            "active_session_id": shelf_active_session_map.get(shelf.id),
+                            "last_session_id": shelf_last_session_map.get(shelf.id),
                         })
                     ladders_out.append({
                         "id": ladder.id,
@@ -132,9 +178,9 @@ def get_floor_scan_status(floor_id: int, db: Session = Depends(get_db)):
                     "side_letter": side.side_letter,
                     "session_count": st.session_count if st else 0,
                     "last_scanned_at": st.last_scanned_at.isoformat() if (st and st.last_scanned_at) else None,
-                    "last_status": last_status.get(side.id),
-                    "active_session_id": active_session_map.get(side.id),
-                    "last_session_id": last_session_map.get(side.id),
+                    "last_status": side_last_status.get(side.id),
+                    "active_session_id": side_active_session_map.get(side.id),
+                    "last_session_id": side_last_session_map.get(side.id),
                     "ladders": ladders_out,
                 })
             ranges_out.append({
@@ -785,6 +831,7 @@ def analyze(session_id: int, body: AnalyzeBody, db: Session = Depends(get_db)):
                         ),
                     ))
 
+    s.status = "analyzed"
     s.analyzed_at = datetime.now(tz=timezone.utc)
     db.commit()
 
@@ -859,10 +906,10 @@ def morgan_overview(db: Session = Depends(get_db)):
         .all()
     )
 
-    # Shelves that have at least one complete session
+    # Shelves that have at least one analyzed or complete session
     complete_shelf_ids: set[int] = set()
     for s in sessions:
-        if s.shelf_id and s.status == "complete":
+        if s.shelf_id and s.status in ("analyzed", "complete"):
             complete_shelf_ids.add(s.shelf_id)
 
     # 3 ─ Known Morgan locations (for display names and tab ordering)
@@ -1012,7 +1059,7 @@ def storage_overview(db: Session = Depends(get_db)):
 
     complete_shelf_ids: set[int] = set()
     for s in sessions:
-        if s.shelf_id and s.status == "complete":
+        if s.shelf_id and s.status in ("analyzed", "complete"):
             complete_shelf_ids.add(s.shelf_id)
 
     storage_locs = (

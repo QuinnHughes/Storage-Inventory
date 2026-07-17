@@ -107,11 +107,34 @@ export default function Scanning() {
     }
   };
 
-  const handleRescan = async (side) => {
-    setRescanModal(null);
-    setCreating(side.id);
+  const handleShelfClick = async (shelf, side) => {
+    if (shelf.active_session_id) {
+      navigate(`/morgan/scanning/${shelf.active_session_id}`);
+      return;
+    }
+    if (shelf.last_session_id) {
+      setRescanModal({ ...side, ...shelf, side_id: side.id, shelf_id: shelf.id });
+      return;
+    }
+    setCreating(shelf.id);
     try {
-      const session = await api.createSession({ range_side_id: side.id });
+      const session = await api.createSession({ shelf_id: shelf.id, range_side_id: side.id });
+      navigate(`/morgan/scanning/${session.id}`);
+    } catch (e) {
+      alert(e.message);
+      setCreating(null);
+    }
+  };
+
+  const handleRescan = async (target) => {
+    setRescanModal(null);
+    setCreating(target.shelf_id ?? target.id);
+    try {
+      const session = await api.createSession(
+        target.shelf_id
+          ? { shelf_id: target.shelf_id, range_side_id: target.side_id ?? target.id }
+          : { range_side_id: target.id }
+      );
       navigate(`/morgan/scanning/${session.id}`);
     } catch (e) {
       alert(e.message);
@@ -259,17 +282,24 @@ export default function Scanning() {
                                           Ldr {ladder.ladder_number}
                                         </span>
                                         <div className="flex flex-wrap gap-1.5">
-                                          {ladder.shelves.map((shelf) => (
-                                            <button
-                                              key={shelf.id}
-                                              title={shelfTitle(side)}
-                                              onClick={() => handleSideClick(side)}
-                                              disabled={creating === side.id}
-                                              className={`w-10 h-10 text-xs font-mono rounded-lg border transition-colors ${shelfClasses(side, creating)}`}
-                                            >
-                                              {shelf.shelf_number}
-                                            </button>
-                                          ))}
+                                          {ladder.shelves.map((shelf) => {
+                                            const isCreatingThis = creating === shelf.id;
+                                            return (
+                                              <button
+                                                key={shelf.id}
+                                                title={shelfTitle(side)}
+                                                onClick={() => handleShelfClick(shelf, side)}
+                                                disabled={isCreatingThis}
+                                                className={`w-10 h-10 text-xs font-mono rounded-lg border transition-colors ${
+                                                  isCreatingThis
+                                                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-wait"
+                                                    : shelfClasses(side, null)
+                                                }`}
+                                              >
+                                                {shelf.shelf_number}
+                                              </button>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     ))}
